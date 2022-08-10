@@ -853,6 +853,7 @@ class operand_info {
   }
   addr_t get_const_mem_offset() const { return m_const_mem_offset; }
   bool is_non_arch_reg() const { return m_is_non_arch_reg; }
+  gpgpu_context *get_gpu() const { return gpgpu_ctx; }
 
  private:
   gpgpu_context *gpgpu_ctx;
