@@ -581,6 +581,49 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
   }
 }
 
+ptx_reg_t inject_fault(ptx_reg_t value, unsigned mask) {
+  ptx_reg_t result;
+  result = value;
+  if (value.u8) {
+    result.u8 = value.u8 & mask;
+    printf("u8 Real value: %d, Fault: %d, mask: %d\n", value.u8, result.u8, mask);
+  }
+  if (value.u16) {
+    result.u16 = value.u16 & mask;
+    printf("u16 Real value: %d, Fault: %d, mask: %d\n", value.u16, result.u16, mask);
+  }
+  if (value.u32) {
+    result.u32 = value.u32 & mask;
+    printf("u32 Real value: %d, Fault: %d, mask: %d\n", value.u32, result.u32, mask);
+  }
+  if (value.u64) {
+    result.u64 = value.u64 & mask;
+    printf("u64 Real value: %d, Fault: %d, mask: %d\n", value.u64, result.u64, mask);
+  }
+  /*
+  if (value.u128) {
+    result.u128 = value.u128;
+    printf("u128 Real value: %d, Fault: %d, mask: %d\n", value.u128, result.u128, mask);
+  }
+  */
+  if (value.f16) {
+    //result.f16 = value.f16 & mask;
+    result.f16 = value.f16;
+    printf("f16 Real value: %d, Fault: %d, mask: %d\n", value.f16, result.f16, mask);
+  }
+  if (value.f32) {
+    //result.f32 = value.f32 & mask;
+    result.f32 = value.f32;
+    printf("f32 Real value: %d, Fault: %d, mask: %d\n", value.f32, result.f32, mask);
+  }
+  if (value.f64) {
+    //result.f64 = value.f64 & mask;
+    result.f64 = value.f64;
+    printf("f64 Real value: %d, Fault: %d, mask: %d\n", value.f64, result.f64, mask);
+  }
+  return result;
+}
+
 void ptx_thread_info::set_operand_value(const operand_info &dst,
                                         const ptx_reg_t &data, unsigned type,
                                         ptx_thread_info *thread,
@@ -590,6 +633,7 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
   size_t size;
   int t;
 
+  gpgpu_context *gpu = dst.get_gpu();
   type_info_key::type_decode(type, size, t);
 
   /*complete this section for other cases*/
@@ -611,8 +655,16 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
         setValue2.u32 = (setValue.u64 == 0) ? 0xFFFFFFFF : 0;
       }
 
-      set_reg(name1, setValue);
-      set_reg(name2, setValue2);
+      if (gpu && gpu->enable_faults == 1) {
+        printf("Faults injected enable\n");
+        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask);
+        ptx_reg_t valueInjected2 = inject_fault(setValue2, gpu->mask);
+        set_reg(name1, valueInjected);
+        set_reg(name2, valueInjected2);
+      } else {
+        set_reg(name1, setValue);
+        set_reg(name2, setValue2);
+      }
     }
 
     // Double destination in cvt,shr,mul,etc. instruction ($p0|$r4) - second
@@ -687,8 +739,16 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
                        ((data.u64 << 16) & 0xFFFF0000);
       }
 
-      set_reg(predName, predValue);
-      set_reg(regName, setValue);
+      if (gpu && gpu->enable_faults == 1) {
+        printf("Faults injected enable\n");
+        ptx_reg_t valueInjected = inject_fault(predValue, gpu->mask);
+        ptx_reg_t valueInjected2 = inject_fault(setValue, gpu->mask);
+        set_reg(predName, valueInjected);
+        set_reg(regName, valueInjected2);
+      } else {
+        set_reg(predName, predValue);
+        set_reg(regName, setValue);
+      }
     } else if (type == BB128_TYPE) {
       // b128 stuff here.
       ptx_reg_t setValue2, setValue3, setValue4;
@@ -707,6 +767,23 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
       name2 = dst.vec_symbol(1);
       name3 = dst.vec_symbol(2);
       name4 = dst.vec_symbol(3);
+
+      if (gpu && gpu->enable_faults == 1) {
+        printf("Faults injected enable\n");
+        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask);
+        ptx_reg_t valueInjected2 = inject_fault(setValue2, gpu->mask);
+        ptx_reg_t valueInjected3 = inject_fault(setValue3, gpu->mask);
+        ptx_reg_t valueInjected4 = inject_fault(setValue4, gpu->mask);
+        set_reg(name1, valueInjected);
+        set_reg(name2, valueInjected2);
+        set_reg(name3, valueInjected);
+        set_reg(name4, valueInjected2);
+      } else {
+        set_reg(name1, setValue);
+        set_reg(name2, setValue2);
+        set_reg(name3, setValue3);
+        set_reg(name4, setValue4);
+      }
 
       set_reg(name1, setValue);
       set_reg(name2, setValue2);
@@ -727,8 +804,17 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
       name1 = dst.vec_symbol(0);
       name2 = dst.vec_symbol(1);
 
-      set_reg(name1, setValue);
-      set_reg(name2, setValue2);
+      if (gpu && gpu->enable_faults == 1) {
+        printf("Faults injected enable\n");
+        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask);
+        ptx_reg_t valueInjected2 = inject_fault(setValue2, gpu->mask);
+        set_reg(name1, valueInjected);
+        set_reg(name2, valueInjected2);
+      } else {
+        set_reg(name1, setValue);
+        set_reg(name2, setValue2);
+      }
+
     } else {
       if (dst.get_operand_lohi() == 1) {
         setValue.u64 = ((m_regs.back()[dst.get_symbol()].u64) & (~(0xFFFF))) +
@@ -738,7 +824,13 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
             ((m_regs.back()[dst.get_symbol()].u64) & (~(0xFFFF0000))) +
             ((data.u64 << 16) & 0xFFFF0000);
       }
-      set_reg(dst.get_symbol(), setValue);
+      if (gpu && gpu->enable_faults == 1) {
+        printf("Faults injected enable\n");
+        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask);
+        set_reg(dst.get_symbol(), valueInjected);
+      } else {
+        set_reg(dst.get_symbol(), setValue);
+      }
     }
   }
 
