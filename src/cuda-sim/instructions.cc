@@ -581,47 +581,49 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
   }
 }
 
-ptx_reg_t inject_fault(ptx_reg_t value, unsigned mask) {
-  ptx_reg_t result;
-  result = value;
-  if (value.u8) {
-    result.u8 = value.u8 & mask;
-    printf("u8 Real value: %d, Fault: %d, mask: %d\n", value.u8, result.u8, mask);
-  }
-  if (value.u16) {
-    result.u16 = value.u16 & mask;
-    printf("u16 Real value: %d, Fault: %d, mask: %d\n", value.u16, result.u16, mask);
-  }
-  if (value.u32) {
-    result.u32 = value.u32 & mask;
-    printf("u32 Real value: %d, Fault: %d, mask: %d\n", value.u32, result.u32, mask);
-  }
-  if (value.u64) {
-    result.u64 = value.u64 & mask;
-    printf("u64 Real value: %d, Fault: %d, mask: %d\n", value.u64, result.u64, mask);
-  }
-  /*
-  if (value.u128) {
-    result.u128 = value.u128;
-    printf("u128 Real value: %d, Fault: %d, mask: %d\n", value.u128, result.u128, mask);
-  }
-  */
-  if (value.f16) {
-    //result.f16 = value.f16 & mask;
-    result.f16 = value.f16;
-    printf("f16 Real value: %d, Fault: %d, mask: %d\n", value.f16, result.f16, mask);
-  }
-  if (value.f32) {
-    //result.f32 = value.f32 & mask;
-    result.f32 = value.f32;
-    printf("f32 Real value: %d, Fault: %d, mask: %d\n", value.f32, result.f32, mask);
-  }
-  if (value.f64) {
-    //result.f64 = value.f64 & mask;
-    result.f64 = value.f64;
-    printf("f64 Real value: %d, Fault: %d, mask: %d\n", value.f64, result.f64, mask);
-  }
-  return result;
+ptx_reg_t inject_fault(ptx_reg_t value, unsigned mask, unsigned sd_target, unsigned core_target, unsigned stuckat,
+  unsigned type_instruction) {
+    printf("mask: %d, SD: %d, Core: %d, stuckat: %d, inst: %d\n", gpu->mask, gpu->sd_target, gpu->core_target, gpu->stuckat, gpu->type_instruction);
+    ptx_reg_t result;
+    result = value;
+    if (value.u8) {
+      result.u8 = value.u8 & mask;
+      printf("u8 Real value: %d, Fault: %d, mask: %d\n", value.u8, result.u8, mask);
+    }
+    if (value.u16) {
+      result.u16 = value.u16 & mask;
+      printf("u16 Real value: %d, Fault: %d, mask: %d\n", value.u16, result.u16, mask);
+    }
+    if (value.u32) {
+      result.u32 = value.u32 & mask;
+      printf("u32 Real value: %d, Fault: %d, mask: %d\n", value.u32, result.u32, mask);
+    }
+    if (value.u64) {
+      result.u64 = value.u64 & mask;
+      printf("u64 Real value: %d, Fault: %d, mask: %d\n", value.u64, result.u64, mask);
+    }
+    /*
+    if (value.u128) {
+      result.u128 = value.u128;
+      printf("u128 Real value: %d, Fault: %d, mask: %d\n", value.u128, result.u128, mask);
+    }
+    */
+    if (value.f16) {
+      //result.f16 = value.f16 & mask;
+      result.f16 = value.f16;
+      printf("f16 Real value: %d, Fault: %d, mask: %d\n", value.f16, result.f16, mask);
+    }
+    if (value.f32) {
+      //result.f32 = value.f32 & mask;
+      result.f32 = value.f32;
+      printf("f32 Real value: %d, Fault: %d, mask: %d\n", value.f32, result.f32, mask);
+    }
+    if (value.f64) {
+      //result.f64 = value.f64 & mask;
+      result.f64 = value.f64;
+      printf("f64 Real value: %d, Fault: %d, mask: %d\n", value.f64, result.f64, mask);
+    }
+    return result;
 }
 
 void ptx_thread_info::set_operand_value(const operand_info &dst,
@@ -657,8 +659,8 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
 
       if (gpu && gpu->enable_faults == 1) {
         printf("Faults injected enable\n");
-        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask);
-        ptx_reg_t valueInjected2 = inject_fault(setValue2, gpu->mask);
+        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask, gpu->sd_target, gpu->core_target, gpu->stuckat, gpu->type_instruction);
+        ptx_reg_t valueInjected2 = inject_fault(setValue2, gpu->mask, gpu->sd_target, gpu->core_target, gpu->stuckat, gpu->type_instruction);
         set_reg(name1, valueInjected);
         set_reg(name2, valueInjected2);
       } else {
@@ -741,8 +743,8 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
 
       if (gpu && gpu->enable_faults == 1) {
         printf("Faults injected enable\n");
-        ptx_reg_t valueInjected = inject_fault(predValue, gpu->mask);
-        ptx_reg_t valueInjected2 = inject_fault(setValue, gpu->mask);
+        ptx_reg_t valueInjected = inject_fault(predValue, gpu->mask, gpu->sd_target, gpu->core_target, gpu->stuckat, gpu->type_instruction);
+        ptx_reg_t valueInjected2 = inject_fault(setValue, gpu->mask, gpu->sd_target, gpu->core_target, gpu->stuckat, gpu->type_instruction);
         set_reg(predName, valueInjected);
         set_reg(regName, valueInjected2);
       } else {
@@ -770,10 +772,10 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
 
       if (gpu && gpu->enable_faults == 1) {
         printf("Faults injected enable\n");
-        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask);
-        ptx_reg_t valueInjected2 = inject_fault(setValue2, gpu->mask);
-        ptx_reg_t valueInjected3 = inject_fault(setValue3, gpu->mask);
-        ptx_reg_t valueInjected4 = inject_fault(setValue4, gpu->mask);
+        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask, gpu->sd_target, gpu->core_target, gpu->stuckat, gpu->type_instruction);
+        ptx_reg_t valueInjected2 = inject_fault(setValue2, gpu->mask, gpu->sd_target, gpu->core_target, gpu->stuckat, gpu->type_instruction);
+        ptx_reg_t valueInjected3 = inject_fault(setValue3, gpu->mask, gpu->sd_target, gpu->core_target, gpu->stuckat, gpu->type_instruction);
+        ptx_reg_t valueInjected4 = inject_fault(setValue4, gpu->mask, gpu->sd_target, gpu->core_target, gpu->stuckat, gpu->type_instruction);
         set_reg(name1, valueInjected);
         set_reg(name2, valueInjected2);
         set_reg(name3, valueInjected);
@@ -806,8 +808,8 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
 
       if (gpu && gpu->enable_faults == 1) {
         printf("Faults injected enable\n");
-        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask);
-        ptx_reg_t valueInjected2 = inject_fault(setValue2, gpu->mask);
+        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask, gpu->sd_target, gpu->core_target, gpu->stuckat, gpu->type_instruction);
+        ptx_reg_t valueInjected2 = inject_fault(setValue2, gpu->mask, gpu->sd_target, gpu->core_target, gpu->stuckat, gpu->type_instruction);
         set_reg(name1, valueInjected);
         set_reg(name2, valueInjected2);
       } else {
@@ -826,7 +828,7 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
       }
       if (gpu && gpu->enable_faults == 1) {
         printf("Faults injected enable\n");
-        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask);
+        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask, gpu->sd_target, gpu->core_target, gpu->stuckat, gpu->type_instruction);
         set_reg(dst.get_symbol(), valueInjected);
       } else {
         set_reg(dst.get_symbol(), setValue);
