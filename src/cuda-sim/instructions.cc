@@ -583,7 +583,7 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
 
 ptx_reg_t inject_fault(ptx_reg_t value, unsigned mask, unsigned sd_target, unsigned core_target, unsigned stuckat,
   unsigned type_instruction) {
-    printf("mask: %d, SD: %d, Core: %d, stuckat: %d, inst: %d\n", gpu->mask, gpu->sd_target, gpu->core_target, gpu->stuckat, gpu->type_instruction);
+    printf("mask: %d, SD: %d, Core: %d, stuckat: %d, inst: %d\n", mask, sd_target, core_target, stuckat, type_instruction);
     ptx_reg_t result;
     result = value;
     if (value.u8) {
