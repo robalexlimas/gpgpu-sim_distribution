@@ -77,6 +77,14 @@ class gpgpu_context {
   const ptx_instruction *pc_to_instruction(unsigned pc);
   const warp_inst_t *ptx_fetch_inst(address_type pc);
   unsigned translate_pc_to_ptxlineno(unsigned pc);
+
+  //Faults injector
+  int enable_faults;
+  unsigned sd_target;
+  unsigned core_target;
+  unsigned mask;
+  unsigned stuckat;
+  unsigned type_instruction;
 };
 gpgpu_context *GPGPU_Context();
 
