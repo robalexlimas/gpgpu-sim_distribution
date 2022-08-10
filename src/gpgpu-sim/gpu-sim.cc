@@ -596,6 +596,30 @@ void gpgpu_sim_config::reg_options(option_parser_t opp) {
       opp, "-gpgpu_ptx_sim_mode", OPT_INT32,
       &(gpgpu_ctx->func_sim->g_ptx_sim_mode),
       "Select between Performance (default) or Functional simulation (1)", "0");
+  option_parser_register(
+      opp, "-enable_faults", OPT_INT32,
+      &(gpgpu_ctx->enable_faults),
+      "Enable the fault injector process", "0");
+  option_parser_register(
+      opp, "-sd_target", OPT_INT32,
+      &(gpgpu_ctx->sd_target),
+      "Define the SD target", "0");
+  option_parser_register(
+      opp, "-core_target", OPT_INT32,
+      &(gpgpu_ctx->core_target),
+      "Define the SD target", "0");
+  option_parser_register(
+      opp, "-mask", OPT_INT32,
+      &(gpgpu_ctx->mask),
+      "Define the mask injected", "0");
+  option_parser_register(
+      opp, "-stuckat", OPT_INT32,
+      &(gpgpu_ctx->stuckat),
+      "Define the bit value to inject", "0");
+  option_parser_register(
+      opp, "-type_instruction", OPT_INT32,
+      &(gpgpu_ctx->type_instruction),
+      "Define the instruction target", "0");
   option_parser_register(opp, "-gpgpu_clock_domains", OPT_CSTR,
                          &gpgpu_clock_domains,
                          "Clock Domain Frequencies in MhZ {<Core Clock>:<ICNT "
