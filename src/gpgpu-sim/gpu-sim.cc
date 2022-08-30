@@ -601,8 +601,12 @@ void gpgpu_sim_config::reg_options(option_parser_t opp) {
       &(gpgpu_ctx->enable_faults),
       "Enable the fault injector process", "0");
   option_parser_register(
-      opp, "-sd_target", OPT_INT32,
-      &(gpgpu_ctx->sd_target),
+      opp, "-instrumentation", OPT_INT32,
+      &(gpgpu_ctx->instrumentation),
+      "Define the instrumentation process", "0");
+  option_parser_register(
+      opp, "-sm_target", OPT_INT32,
+      &(gpgpu_ctx->sm_target),
       "Define the SD target", "0");
   option_parser_register(
       opp, "-core_target", OPT_INT32,

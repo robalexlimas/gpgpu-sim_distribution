@@ -80,7 +80,8 @@ class gpgpu_context {
 
   //Faults injector
   int enable_faults;
-  unsigned sd_target;
+  int instrumentation;
+  unsigned sm_target;
   unsigned core_target;
   unsigned mask;
   unsigned stuckat;
