@@ -39,8 +39,8 @@ def main():
 -instrumentation $instrumentation
     """
     params = Template(injector_params).substitute(
-        enable=args[1], sm=args[2], core=args[3]
-        , mask=args[4], stuckat=args[5], inst=args[6], instrumentation=args[7]
+        enable=args[1], sm=args[2], core=args[3], 
+        mask=args[4], stuckat=args[5], inst=args[6], instrumentation=args[7]
     )
     with open(config_file, 'a') as file:
         file.write(params)

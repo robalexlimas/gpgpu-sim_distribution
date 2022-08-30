@@ -45,12 +45,12 @@ def create_golden_out():
     with open(result_file, 'r') as file:
         lines = file.readlines()
     for line in lines:
+        if 'RESULTS END HERE' in line:
+            end = True
         if start and not end:
             golden_out.append(line)
         if 'RESULTS START HERE' in line:
             start = True
-        if 'RESULTS END HERE' in line:
-            end = True
     golden_file = os.path.join(common.APP_DIR, 'golden.txt')
     with open(golden_file, 'w') as file:
         for line in golden_out:
