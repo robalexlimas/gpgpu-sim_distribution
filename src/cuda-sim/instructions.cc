@@ -645,6 +645,7 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
 
   core_t *core = thread->get_core();
   kernel_info_t *kernel = core->get_kernel_info();
+  unsigned core_id = kernel->get_uid() % 32;
   unsigned SM = kernel->entry()->get_sm_target();
 
   gpgpu_context *gpu = dst.get_gpu();
@@ -674,8 +675,8 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
       }
 
       if (gpu && gpu->enable_faults == 1) {
-        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, kernel->get_uid(), SM);
-        ptx_reg_t valueInjected2 = inject_fault(setValue2, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, kernel->get_uid(), SM);
+        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
+        ptx_reg_t valueInjected2 = inject_fault(setValue2, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
         set_reg(name1, valueInjected);
         set_reg(name2, valueInjected2);
       } else {
@@ -757,8 +758,8 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
       }
 
       if (gpu && gpu->enable_faults == 1) {
-        ptx_reg_t valueInjected = inject_fault(predValue, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, kernel->get_uid(), SM);
-        ptx_reg_t valueInjected2 = inject_fault(setValue, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, kernel->get_uid(), SM);
+        ptx_reg_t valueInjected = inject_fault(predValue, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
+        ptx_reg_t valueInjected2 = inject_fault(setValue, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
         set_reg(predName, valueInjected);
         set_reg(regName, valueInjected2);
       } else {
@@ -785,10 +786,10 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
       name4 = dst.vec_symbol(3);
 
       if (gpu && gpu->enable_faults == 1) {
-        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, kernel->get_uid(), SM);
-        ptx_reg_t valueInjected2 = inject_fault(setValue2, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, kernel->get_uid(), SM);
-        ptx_reg_t valueInjected3 = inject_fault(setValue3, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, kernel->get_uid(), SM);
-        ptx_reg_t valueInjected4 = inject_fault(setValue4, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, kernel->get_uid(), SM);
+        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
+        ptx_reg_t valueInjected2 = inject_fault(setValue2, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
+        ptx_reg_t valueInjected3 = inject_fault(setValue3, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
+        ptx_reg_t valueInjected4 = inject_fault(setValue4, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
         set_reg(name1, valueInjected);
         set_reg(name2, valueInjected2);
         set_reg(name3, valueInjected);
@@ -820,8 +821,8 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
       name2 = dst.vec_symbol(1);
 
       if (gpu && gpu->enable_faults == 1) {
-        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, kernel->get_uid(), SM);
-        ptx_reg_t valueInjected2 = inject_fault(setValue2, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, kernel->get_uid(), SM);
+        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
+        ptx_reg_t valueInjected2 = inject_fault(setValue2, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
         set_reg(name1, valueInjected);
         set_reg(name2, valueInjected2);
       } else {
@@ -839,7 +840,7 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
             ((data.u64 << 16) & 0xFFFF0000);
       }
       if (gpu && gpu->enable_faults == 1) {
-        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, kernel->get_uid(), SM);
+        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
         set_reg(dst.get_symbol(), valueInjected);
       } else {
         set_reg(dst.get_symbol(), setValue);
