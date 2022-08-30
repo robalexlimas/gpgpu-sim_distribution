@@ -63,3 +63,6 @@ gpu-app-collection/
 
 # Visual
 .vscode/
+
+# Python
+__pycache__
