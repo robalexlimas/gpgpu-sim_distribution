@@ -557,34 +557,12 @@ void sign_extend(ptx_reg_t &data, unsigned src_size, const operand_info &dst) {
   data.u64 |= mask;
 }
 
-void ptx_thread_info::set_operand_value(const operand_info &dst,
-                                        const ptx_reg_t &data, unsigned type,
-                                        ptx_thread_info *thread,
-                                        const ptx_instruction *pI, int overflow,
-                                        int carry) {
-  thread->set_operand_value(dst, data, type, thread, pI);
-
-  if (dst.get_double_operand_type() == -2) {
-    ptx_reg_t predValue;
-
-    const symbol *sym = dst.vec_symbol(0);
-    predValue.u64 = (m_regs.back()[sym].u64) & ~(0x0C);
-    predValue.u64 |= ((overflow & 0x01) << 3);
-    predValue.u64 |= ((carry & 0x01) << 2);
-
-    set_reg(sym, predValue);
-  } else if (dst.get_double_operand_type() == 0) {
-    // intentionally do nothing
-  } else {
-    printf("Unexpected double destination\n");
-    assert(0);
-  }
-}
-
 ptx_reg_t inject_fault(ptx_reg_t value, unsigned mask, unsigned sm_target, unsigned core_target, 
                         unsigned stuckat, unsigned type_instruction, unsigned i_type, unsigned core, unsigned SM) {
   ptx_reg_t result;
   result = value;
+  float y;
+  int int_d;
   unsigned maskReal = stuckat == 0 ? ~mask : mask;
   if (type_instruction == i_type && sm_target == SM && core_target == core) {
     switch (type_instruction) {
@@ -613,25 +591,80 @@ ptx_reg_t inject_fault(ptx_reg_t value, unsigned mask, unsigned sm_target, unsig
         result.u64 = stuckat == 0 ? value.u64 & maskReal : value.u64 | maskReal;
         break;
       case F16_TYPE:
-        //result.f16 = value.f16 & mask;
-        result.f16 = value.f16;
-        printf("f16 Real value: %f, Fault: %f\n", value.f16, result.f16);
+        int_d = *(int *)&value.f16;
+        int_d = stuckat == 0 ? int_d & maskReal : int_d | maskReal;
+        y = *(float *)&(int_d);
+        result.f16 = y;
         break;
       case F32_TYPE:
-        //result.f32 = value.f32 & mask;
-        result.f32 = value.f32;
-        printf("f32 Real value: %f, Fault: %f\n", value.f32, result.f32);
+        int_d = *(int *)&value.f32;
+        int_d = stuckat == 0 ? int_d & maskReal : int_d | maskReal;
+        y = *(float *)&(int_d);
+        result.f32 = y;
         break;
       case F64_TYPE:
-        //result.f64 = value.f64 & mask;
-        result.f64 = value.f64;
-        printf("f64 Real value: %f, Fault: %f\n", value.f64, result.f64);
+        int_d = *(int *)&value.f64;
+        int_d = stuckat == 0 ? int_d & maskReal : int_d | maskReal;
+        y = *(float *)&(int_d);
+        result.f64 = y;
         break;
       default:
         break;
     }
   }
   return result;
+}
+
+void set_value_injected(const operand_info &dst,
+                        const ptx_reg_t &data, unsigned type,
+                        ptx_thread_info *thread,
+                        const ptx_instruction *pI) {
+  core_t *core = thread->get_core();
+  kernel_info_t *kernel = core->get_kernel_info();
+  unsigned core_id = kernel->get_uid() % 32;
+  unsigned SM = kernel->entry()->get_sm_target();
+
+  size_t size;
+  int t;
+
+  gpgpu_context *gpu = dst.get_gpu();
+  type_info_key::type_decode(type, size, t);
+
+  if (gpu->instrumentation == 1) {
+    printf("Type instruction -> %d\n", type);
+  }
+
+  if (gpu && gpu->enable_faults == 1) {
+    ptx_reg_t valueInjected = inject_fault(data, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
+    thread->set_operand_value(dst, valueInjected, type, thread, pI);
+  } else {
+    thread->set_operand_value(dst, data, type, thread, pI);
+  }
+}
+
+
+void ptx_thread_info::set_operand_value(const operand_info &dst,
+                                        const ptx_reg_t &data, unsigned type,
+                                        ptx_thread_info *thread,
+                                        const ptx_instruction *pI, int overflow,
+                                        int carry) {
+  set_value_injected(dst, data, type, thread, pI);
+
+  if (dst.get_double_operand_type() == -2) {
+    ptx_reg_t predValue;
+
+    const symbol *sym = dst.vec_symbol(0);
+    predValue.u64 = (m_regs.back()[sym].u64) & ~(0x0C);
+    predValue.u64 |= ((overflow & 0x01) << 3);
+    predValue.u64 |= ((carry & 0x01) << 2);
+
+    set_reg(sym, predValue);
+  } else if (dst.get_double_operand_type() == 0) {
+    // intentionally do nothing
+  } else {
+    printf("Unexpected double destination\n");
+    assert(0);
+  }
 }
 
 void ptx_thread_info::set_operand_value(const operand_info &dst,
@@ -643,17 +676,7 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
   size_t size;
   int t;
 
-  core_t *core = thread->get_core();
-  kernel_info_t *kernel = core->get_kernel_info();
-  unsigned core_id = kernel->get_uid() % 32;
-  unsigned SM = kernel->entry()->get_sm_target();
-
-  gpgpu_context *gpu = dst.get_gpu();
   type_info_key::type_decode(type, size, t);
-
-  if (gpu->instrumentation == 1) {
-    printf("Type instruction -> %d\n", type);
-  }
 
   /*complete this section for other cases*/
   if (dst.get_addr_space() == undefined_space) {
@@ -674,15 +697,8 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
         setValue2.u32 = (setValue.u64 == 0) ? 0xFFFFFFFF : 0;
       }
 
-      if (gpu && gpu->enable_faults == 1) {
-        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
-        ptx_reg_t valueInjected2 = inject_fault(setValue2, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
-        set_reg(name1, valueInjected);
-        set_reg(name2, valueInjected2);
-      } else {
-        set_reg(name1, setValue);
-        set_reg(name2, setValue2);
-      }
+      set_reg(name1, setValue);
+      set_reg(name2, setValue2);
     }
 
     // Double destination in cvt,shr,mul,etc. instruction ($p0|$r4) - second
@@ -757,15 +773,8 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
                        ((data.u64 << 16) & 0xFFFF0000);
       }
 
-      if (gpu && gpu->enable_faults == 1) {
-        ptx_reg_t valueInjected = inject_fault(predValue, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
-        ptx_reg_t valueInjected2 = inject_fault(setValue, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
-        set_reg(predName, valueInjected);
-        set_reg(regName, valueInjected2);
-      } else {
-        set_reg(predName, predValue);
-        set_reg(regName, setValue);
-      }
+      set_reg(predName, predValue);
+      set_reg(regName, setValue);
     } else if (type == BB128_TYPE) {
       // b128 stuff here.
       ptx_reg_t setValue2, setValue3, setValue4;
@@ -784,22 +793,6 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
       name2 = dst.vec_symbol(1);
       name3 = dst.vec_symbol(2);
       name4 = dst.vec_symbol(3);
-
-      if (gpu && gpu->enable_faults == 1) {
-        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
-        ptx_reg_t valueInjected2 = inject_fault(setValue2, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
-        ptx_reg_t valueInjected3 = inject_fault(setValue3, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
-        ptx_reg_t valueInjected4 = inject_fault(setValue4, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
-        set_reg(name1, valueInjected);
-        set_reg(name2, valueInjected2);
-        set_reg(name3, valueInjected);
-        set_reg(name4, valueInjected2);
-      } else {
-        set_reg(name1, setValue);
-        set_reg(name2, setValue2);
-        set_reg(name3, setValue3);
-        set_reg(name4, setValue4);
-      }
 
       set_reg(name1, setValue);
       set_reg(name2, setValue2);
@@ -820,15 +813,9 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
       name1 = dst.vec_symbol(0);
       name2 = dst.vec_symbol(1);
 
-      if (gpu && gpu->enable_faults == 1) {
-        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
-        ptx_reg_t valueInjected2 = inject_fault(setValue2, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
-        set_reg(name1, valueInjected);
-        set_reg(name2, valueInjected2);
-      } else {
-        set_reg(name1, setValue);
-        set_reg(name2, setValue2);
-      }
+      set_reg(name1, setValue);
+      set_reg(name2, setValue2);
+
 
     } else {
       if (dst.get_operand_lohi() == 1) {
@@ -839,12 +826,7 @@ void ptx_thread_info::set_operand_value(const operand_info &dst,
             ((m_regs.back()[dst.get_symbol()].u64) & (~(0xFFFF0000))) +
             ((data.u64 << 16) & 0xFFFF0000);
       }
-      if (gpu && gpu->enable_faults == 1) {
-        ptx_reg_t valueInjected = inject_fault(setValue, gpu->mask, gpu->sm_target, gpu->core_target, gpu->stuckat, gpu->type_instruction, type, core_id, SM);
-        set_reg(dst.get_symbol(), valueInjected);
-      } else {
-        set_reg(dst.get_symbol(), setValue);
-      }
+      set_reg(dst.get_symbol(), setValue);
     }
   }
 
@@ -984,7 +966,7 @@ void abs_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  set_value_injected(dst, d, i_type, thread, pI);
 }
 
 void addp_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -1200,7 +1182,7 @@ void and_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   else
     data.u64 = src1_data.u64 & src2_data.u64;
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  set_value_injected(dst, data, i_type, thread, pI);
 }
 
 void andn_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -1232,7 +1214,7 @@ void andn_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
 
   data.u64 = src1_data.u64 & src2_data.u64;
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  set_value_injected(dst, data, i_type, thread, pI);
 }
 
 void bar_callback(const inst_t *inst, ptx_thread_info *thread) {
@@ -1774,7 +1756,7 @@ void bfe_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       abort();
       return;
   }
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  set_value_injected(dst, data, i_type, thread, pI);
 }
 
 void bfi_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -1815,7 +1797,7 @@ void bfi_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
     data.u32 = (~((0x00000001) << (pos + i))) & data.u32;
     data.u32 = data.u32 | ((src1_data.u32 & ((0x00000001) << (i))) << (pos));
   }
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  set_value_injected(dst, data, i_type, thread, pI);
 }
 void bfind_impl(const ptx_instruction *pI, ptx_thread_info *thread)
 {
@@ -2377,7 +2359,7 @@ void clz_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
     a.u64 = a.u64 << 1;
   }
 
-  thread->set_operand_value(dst, d, B32_TYPE, thread, pI);
+  set_value_injected(dst, d, B32_TYPE, thread, pI);
 }
 
 void cnot_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -2407,7 +2389,7 @@ void cnot_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  set_value_injected(dst, d, i_type, thread, pI);
 }
 
 void cos_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -2428,7 +2410,7 @@ void cos_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  set_value_injected(dst, d, i_type, thread, pI);
 }
 
 ptx_reg_t chop(ptx_reg_t x, unsigned from_width, unsigned to_width, int to_sign,
@@ -3187,7 +3169,7 @@ void cvt_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
     data = result;
   }
 
-  thread->set_operand_value(dst, data, to_type, thread, pI);
+  set_value_injected(dst, data, to_type, thread, pI);
 }
 
 void cvta_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -3305,7 +3287,7 @@ void div_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       assert(0);
       break;
   }
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  set_value_injected(dst, data, i_type, thread, pI);
 }
 
 void dp4a_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -3332,7 +3314,7 @@ void ex2_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       break;
   }
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  set_value_injected(dst, data, i_type, thread, pI);
 }
 
 void exit_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -3875,7 +3857,7 @@ void lg2_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  set_value_injected(dst, d, i_type, thread, pI);
 }
 
 void mad24_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -3924,7 +3906,7 @@ void mad24_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  set_value_injected(dst, d, i_type, thread, pI);
 }
 
 void mad_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -4162,7 +4144,7 @@ void max_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  set_value_injected(dst, d, i_type, thread, pI);
 }
 
 void membar_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -4211,7 +4193,7 @@ void min_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  set_value_injected(dst, d, i_type, thread, pI);
 }
 
 void mov_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -4375,7 +4357,7 @@ void mul24_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
     data.mask_and(0, 0xFFFFFFFF);
   }
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  set_value_injected(dst, data, i_type, thread, pI);
 }
 
 void mul_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -4533,7 +4515,7 @@ void mul_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  set_value_injected(dst, d, i_type, thread, pI);
 }
 
 void neg_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -4573,7 +4555,7 @@ void neg_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       break;
   }
 
-  thread->set_operand_value(dst, data, to_type, thread, pI);
+  set_value_injected(dst, data, to_type, thread, pI);
 }
 
 // nandn bitwise negates second operand then bitwise nands with the first
@@ -4595,7 +4577,7 @@ void nandn_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   else
     data.u64 = ~(src1_data.u64 & ~src2_data.u64);
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  set_value_injected(dst, data, i_type, thread, pI);
 }
 
 // norn bitwise negates first operand then bitwise ands with the second operand
@@ -4616,7 +4598,7 @@ void norn_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   else
     data.u64 = ~(src1_data.u64) & src2_data.u64;
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  set_value_injected(dst, data, i_type, thread, pI);
 }
 
 void not_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -4646,7 +4628,7 @@ void not_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  set_value_injected(dst, d, i_type, thread, pI);
 }
 
 void or_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -4665,7 +4647,7 @@ void or_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   else
     data.u64 = src1_data.u64 | src2_data.u64;
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  set_value_injected(dst, data, i_type, thread, pI);
 }
 
 void orn_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -4684,7 +4666,7 @@ void orn_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   else
     data.u64 = src1_data.u64 | ~src2_data.u64;
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  set_value_injected(dst, data, i_type, thread, pI);
 }
 
 void pmevent_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -4848,7 +4830,7 @@ void rcp_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       break;
   }
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  set_value_injected(dst, data, i_type, thread, pI);
 }
 
 void red_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -4946,7 +4928,7 @@ void rsqrt_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  set_value_injected(dst, d, i_type, thread, pI);
 }
 
 #define SAD(d, a, b, c) d = c + ((a < b) ? (b - a) : (a - b))
@@ -4995,7 +4977,7 @@ void sad_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  set_value_injected(dst, d, i_type, thread, pI);
 }
 
 void selp_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -5016,7 +4998,7 @@ void selp_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   // behavior
   d = (!(c.pred & 0x0001)) ? a : b;
 
-  thread->set_operand_value(dst, d, PRED_TYPE, thread, pI);
+  set_value_injected(dst, d, PRED_TYPE, thread, pI);
 }
 
 bool isFloat(int type) {
@@ -5385,7 +5367,7 @@ void setp_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       (t ==
        0);  // inverting predicate since ptxplus uses "1" for a set zero flag
 
-  thread->set_operand_value(dst, data, PRED_TYPE, thread, pI);
+  set_value_injected(dst, data, PRED_TYPE, thread, pI);
 }
 
 void set_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -5449,7 +5431,7 @@ void set_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
     data.u32 = (t != 0) ? 0xFFFFFFFF : 0;
   }
 
-  thread->set_operand_value(dst, data, pI->get_type(), thread, pI);
+  set_value_injected(dst, data, pI->get_type(), thread, pI);
 }
 
 void shfl_impl(const ptx_instruction *pI, core_t *core, warp_inst_t inst) {
@@ -5517,7 +5499,7 @@ void shfl_impl(const ptx_instruction *pI, core_t *core, warp_inst_t inst) {
         "threads in a warp\n");
     data.u32 = 0;
   }
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  set_value_injected(dst, data, i_type, thread, pI);
 
   /*
   TODO: deal with predicates appropriately using the following pseudocode:
@@ -5573,7 +5555,7 @@ void shl_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  set_value_injected(dst, d, i_type, thread, pI);
 }
 
 void shr_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -5652,7 +5634,7 @@ void shr_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  set_value_injected(dst, d, i_type, thread, pI);
 }
 
 void sin_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -5673,7 +5655,7 @@ void sin_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  set_value_injected(dst, d, i_type, thread, pI);
 }
 
 void slct_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -5725,7 +5707,7 @@ void slct_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       assert(0);
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  set_value_injected(dst, d, i_type, thread, pI);
 }
 
 void sqrt_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -5756,7 +5738,7 @@ void sqrt_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  set_value_injected(dst, d, i_type, thread, pI);
 }
 
 void sst_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
@@ -6572,7 +6554,7 @@ void xor_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   else
     data.u64 = src1_data.u64 ^ src2_data.u64;
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  set_value_injected(dst, data, i_type, thread, pI);
 }
 
 void inst_not_implemented(const ptx_instruction *pI) {
