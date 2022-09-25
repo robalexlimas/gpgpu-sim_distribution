@@ -20,7 +20,7 @@ example:
 """
 
 def main():
-    args = sys.argv
+    args = [data.replace(',', '').strip() for data in sys.argv]
     gpgpusim_config_dir = os.path.join(common.GPGPUSIM_DIR, 'configs/tested-cfgs/SM7_TITANV')
     files = os.listdir(gpgpusim_config_dir)
     for file in files:

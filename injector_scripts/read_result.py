@@ -18,13 +18,14 @@ def create_stdout():
             golden_out.append(line)
         if 'RESULTS START HERE' in line:
             start = True
-    stdout_file = os.path.join(
-        result_path,
-        'stdout_{}.txt'.format(os.getenv('TOTAL_FAULTS'))
-    )
-    with open(stdout_file, 'w+') as file:
-        for line in golden_out:
-            file.write(line)
+    if start and end:
+        stdout_file = os.path.join(
+            result_path,
+            'stdout_{}.txt'.format(os.getenv('FAULT').split(':')[0])
+        )
+        with open(stdout_file, 'w+') as file:
+            for line in golden_out:
+                file.write(line)
 
 
 def main():
