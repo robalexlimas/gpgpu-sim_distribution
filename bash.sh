@@ -17,6 +17,7 @@ export APP_NAME=mul
 
 # VARIABLES
 export TOTAL_FAULTS=2
+export FAULT=0
 export SM_TARGET=0
 export CORE_TARGET=0
 export STUCKAT=0
@@ -28,6 +29,9 @@ rm $APP_DIR/_cuobjdump_list_ptx_*
 rm $APP_DIR/gpgpu_inst_stats.txt 
 rm $APP_DIR/$APP_NAME.1.sm_70.ptx*
 rm $APP_DIR/out.txt
+
+mkdir $APP_DIR/results
+mkdir $APP_DIR/outs
 
 ###############################################################################
 # GO TO GPGPUSIM DIR
@@ -51,14 +55,18 @@ python3 $GPGPUSIM_DIR/injector_scripts/fault_list.py
 
 ###############################################################################
 # RUN THE DIVERSE FAULTS
-while [ $TOTAL_FAULTS -ge 0 ]
-do 
-    ((TOTAL_FAULTS--))
-    python3 $GPGPUSIM_DIR/injector_scripts/read_fault_list.py $TOTAL_FAULTS
-    echo "Fault: $TOTAL_FAULTS, SM Target $SM, CORE target $CORE, MASK $MASK, STUCKAT $STUCK, INSTRUCTION $INSTRUCTION"
+while read -a line
+do
+    FAULT=${line[0]}
+    SM=${line[2]}
+    CORE=${line[4]}
+    MASK=${line[6]}
+    STUCK=${line[8]}
+    INSTRUCTION=${line[10]}
+    echo "Fault: $FAULT, SM Target $SM CORE target $CORE MASK $MASK STUCKAT $STUCK INSTRUCTION $INSTRUCTION"
     # enable_faults sm_target core_target mask stuckat type_instruction instrumentation
-    python3 $GPGPUSIM_DIR/injector_scripts/load_params_sim.py 1 0 0 0 0 310 0
-    #python3 $GPGPUSIM_DIR/injector_scripts/load_params_sim.py 1 $SM $CORE $MASK $STUCK $INSTRUCTION 0
+    python3 $GPGPUSIM_DIR/injector_scripts/load_params_sim.py 1 $SM $CORE $MASK $STUCK $INSTRUCTION 0
     ./$APP_NAME > $APP_DIR/out.txt
     python3 $GPGPUSIM_DIR/injector_scripts/read_result.py
-done
+    mv $APP_DIR/out.txt $APP_DIR/outs/out_$FAULT.txt
+done < $APP_DIR/fault_list.txt
