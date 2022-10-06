@@ -4,17 +4,21 @@ import common
 
 def read_instructions():
     result_file = os.path.join(common.APP_DIR, 'out.txt')
+    ints_file = os.path.join(common.APP_DIR, 'inst.txt')
     instructions = dict()
     with open(result_file, 'r') as file:
         lines = file.readlines()
-    for line in lines:
-        if 'Type instruction ->' in line:
-            inst = int(line.split('Type instruction ->')[-1])
-            keys = instructions.keys()
-            if inst in keys:
-                instructions[inst] = instructions[inst] + 1
-            else:
-                instructions[inst] = 0
+        for line in lines:
+            if 'Type instruction ->' in line:
+                inst = int(line.split('Type instruction ->')[-1])
+                keys = instructions.keys()
+                if inst in keys:
+                    instructions[inst] = instructions[inst] + 1
+                else:
+                    instructions[inst] = 0
+    with open(ints_file, 'w') as file:
+        for inst in instructions:
+            file.write('{}\n'.format(inst))
     return [str(inst) for inst in instructions.keys()]
 
 
@@ -25,7 +29,8 @@ def generate_fault_list(instructions):
         faults.append(
             '{}: SM {}, CORE {}, MASK {}, STUCKAT {}, INSTRUCTION {}\n'
             .format(
-                fault, common.SM_TARGET, common.CORE_TARGET, 2 ** mask, common.STUCKAT, random.choice(instructions)
+                #fault, common.SM_TARGET, common.CORE_TARGET, 2 ** mask, common.STUCKAT, random.choice(instructions)
+                fault, common.SM_TARGET, common.CORE_TARGET, 2 ** mask, '1', random.choice(instructions)
             )
         )
     return faults
@@ -59,6 +64,7 @@ def create_golden_out():
 
 def main():
     instructions = read_instructions()
+    instructions = ['305', '306']
     faults = generate_fault_list(instructions)
     create_faults_file(faults)
     create_golden_out()
