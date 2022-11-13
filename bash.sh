@@ -4,7 +4,7 @@
 #
 
 # stop after first error 
-set -e 
+# set -e 
 
 ###############################################################################
 find . -name "*.sh" | xargs chmod +x
@@ -16,10 +16,10 @@ export APP_DIR=/home/robert/Documents/GPGPU-SIM-Test/Fake
 export APP_NAME=mul
 
 # VARIABLES
-export TOTAL_FAULTS=100
+export TOTAL_FAULTS=1000
 export FAULT=0
-export SM_TARGET=0
-export CORE_TARGET=0
+export SM_TARGET=14
+export CORE_TARGET=1
 export STUCKAT=0
 
 # REMOVE THE PREVIOUS SIMULATIONS
@@ -51,9 +51,13 @@ ldd $APP_NAME
 # OBTAIN THE GOLDEN OUT AND CREATE THE FAULT LIST
 # enable_faults sm_target core_target mask stuckat type_instruction instrumentation
 python3 $GPGPUSIM_DIR/injector_scripts/load_params_sim.py 0 0 0 0 0 0 1
+#start_ns=`date +%s%N`
 ./$APP_NAME > $APP_DIR/out.txt
-#python3 $GPGPUSIM_DIR/injector_scripts/fault_list.py
+python3 $GPGPUSIM_DIR/injector_scripts/fault_list.py
 mv $APP_DIR/out.txt $APP_DIR/outs/golden_out.txt
+#end_ns=`date +%s%N`
+#let original_time=($end_ns-$start_ns)/1000000000
+#echo "Time: $original_time- nanoseconds"
 ###############################################################################
 
 ###############################################################################
@@ -71,13 +75,18 @@ do
     echo "Fault: $FAULT, SM Target $SM CORE target $CORE MASK $MASK STUCKAT $STUCK INSTRUCTION $INSTRUCTION"
     # enable_faults sm_target core_target mask stuckat type_instruction instrumentation
     python3 $GPGPUSIM_DIR/injector_scripts/load_params_sim.py 1 $SM $CORE $MASK $STUCK $INSTRUCTION 0
-    ./$APP_NAME > $APP_DIR/out.txt
+    ./$APP_NAME > $APP_DIR/out.txt & sleep 90; pkill $APP_NAME
     python3 $GPGPUSIM_DIR/injector_scripts/read_result.py
     mv $APP_DIR/out.txt $APP_DIR/outs/out_$FAULT.txt
     end_ns=`date +%s%N`
     let total_ns=$end_ns-$start_ns
     echo "Time: $total_ns- nanosegudos"
     echo "$total_ns" >> $APP_DIR/times.txt
+    rm -r $APP_DIR/checkpoint_files/
+    rm $APP_DIR/_app_cuda_version_*
+    rm $APP_DIR/_cuobjdump_list_ptx_*
+    rm $APP_DIR/gpgpu_inst_stats.txt 
+    rm $APP_DIR/$APP_NAME.1.sm_70.ptx*
 done < $APP_DIR/fault_list.txt
 ls $APP_DIR/results/ | wc -l
 ls -lah $APP_DIR/outs/ |cut -d ' ' -f 5 > $APP_DIR/outs/sizes.txt
