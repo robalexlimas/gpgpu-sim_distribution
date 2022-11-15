@@ -90,3 +90,6 @@ do
 done < $APP_DIR/fault_list.txt
 ls $APP_DIR/results/ | wc -l
 ls -lah $APP_DIR/outs/ |cut -d ' ' -f 5 > $APP_DIR/outs/sizes.txt
+
+# Analize the results
+python3 $GPGPUSIM_DIR/injector_scripts/results.py
