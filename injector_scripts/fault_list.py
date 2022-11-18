@@ -25,7 +25,7 @@ def read_instructions():
 def generate_fault_list(instructions):
     faults = []
     for fault in range(int(common.TOTAL_FAULTS)):
-        mask = random.randint(0, 31)
+        mask = random.randint(0, 30)
         faults.append(
             '{}: SM {}, CORE {}, MASK {}, STUCKAT {}, INSTRUCTION {}\n'
             .format(
@@ -64,7 +64,8 @@ def create_golden_out():
 
 def main():
     instructions = read_instructions()
-    instructions = ['305', '306']
+    # instructions = ['311', '312', '313'] # floats
+    instructions = ['305', '306'] # integer
     faults = generate_fault_list(instructions)
     create_faults_file(faults)
     create_golden_out()
