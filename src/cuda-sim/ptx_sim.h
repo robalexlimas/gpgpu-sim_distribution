@@ -305,7 +305,7 @@ class ptx_thread_info {
   }
 
   void ptx_fetch_inst(inst_t &inst) const;
-  void ptx_exec_inst(warp_inst_t &inst, unsigned lane_id);
+  void ptx_exec_inst(warp_inst_t &inst, unsigned lane_id, current_status_t* current_status);
 
   const ptx_version &get_ptx_version() const;
   void set_reg(const symbol *reg, const ptx_reg_t &value);

@@ -1693,7 +1693,7 @@ int tensorcore_op(int inst_opcode) {
   else
     return 0;
 }
-void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id) {
+void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id, current_status_t* current_status) {
   bool skip = false;
   int op_classification = 0;
   addr_t pc = next_instr();
@@ -1755,6 +1755,14 @@ void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id) {
               "threads needs to be active.");
           assert(0);
         }
+      }
+
+      unsigned int operands = pI->get_num_operands();
+      printf("Inst: %s\n", current_status->m_instruction);
+      if (operands > 1) {
+        const operand_info &src  = pI->src1();
+        gpgpu_context *gpu = src.get_gpu();
+        printf("Fault: %u\n", gpu->m_fault.m_sm_id);
       }
 
       // Tensorcore is warp synchronous operation. So these instructions needs
@@ -1947,6 +1955,7 @@ void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id) {
     printf("GPGPU-Sim PTX:       '%s'\n", pI->get_source());
     abort();
   }
+  free(current_status);
 }
 
 void cuda_sim::set_param_gpgpu_num_shaders(int num_shaders) {

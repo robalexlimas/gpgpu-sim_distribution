@@ -1180,19 +1180,17 @@ void core_t::execute_warp_inst_t(warp_inst_t &inst, unsigned warpId) {
     if (inst.active(t)) {
       if (warpId == (unsigned(-1))) warpId = inst.warp_id();
       unsigned tid = m_warp_size * warpId + t;
-      printf("Operation: %d, Operand type: %d, Inst: %s\n", 
-        inst.op, 
-        inst.oprnd_type,
-        g_opcode_string[inst.get_opcode()]
-      );
-      printf("Thread id: %d, Lane id: %d, Warp id: %d, Scheduler id: %d, SMID: %d\n", 
-        m_warp_size * warpId + t,
-        t, 
-        warpId, 
-        inst.get_schd_id(), 
-        m_sid
-      );
-      m_thread[tid]->ptx_exec_inst(inst, t);
+      current_status_t* current_status = (current_status_t*) malloc(sizeof(current_status_t));
+      current_status->m_operation_type = inst.op;
+      current_status->m_operand_type = inst.oprnd_type;
+      current_status->m_instruction = g_opcode_string[inst.get_opcode()];
+      current_status->m_thread_id = tid;
+      current_status->m_lane_id = t;
+      current_status->m_warp_id = warpId;
+      current_status->m_sch_id = inst.get_schd_id();
+      current_status->m_sm_id = m_sid;
+
+      m_thread[tid]->ptx_exec_inst(inst, t, current_status);
 
       // virtual function
       checkExecutionStatusAndUpdate(inst, t, tid);

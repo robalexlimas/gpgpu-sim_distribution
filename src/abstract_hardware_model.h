@@ -1420,12 +1420,31 @@ struct fault_t
   unsigned int m_stuck_at;
 };
 
-class injector {
-  injector(fault_t fault) {
-    m_fault = fault;
-  }
+struct current_status_t {
+  op_type m_operation_type;
+  types_of_operands m_operand_type;
+  const char * m_instruction;
+  unsigned m_thread_id;
+  unsigned m_lane_id;
+  unsigned int m_warp_id;
+  unsigned int m_sch_id;
+  unsigned int m_sm_id;
+};
 
-  fault_t m_fault;
+class injector_t {
+  public:
+    injector_t(gpgpu_context* gpu, current_status_t* current_status) {
+      m_gpu = gpu;
+      m_current_status = current_status;
+    };
+    ~injector_t();
+
+    current_status_t* get_current_status() { return m_current_status; };
+    void set_current_status(current_status_t* current_status) { m_current_status = current_status; };
+
+  private:
+    current_status_t* m_current_status;
+    gpgpu_context* m_gpu;
 };
 
 #endif  // #ifdef __cplusplus
