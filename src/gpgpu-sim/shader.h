@@ -2274,6 +2274,7 @@ class exec_shader_core_ctx : public shader_core_ctx {
                        shader_core_stats *stats)
       : shader_core_ctx(gpu, cluster, shader_id, tpc_id, config, mem_config,
                         stats) {
+    set_sm_id(shader_id);
     create_front_pipeline();
     create_shd_warp();
     create_schedulers();

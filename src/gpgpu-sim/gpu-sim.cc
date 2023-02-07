@@ -596,30 +596,6 @@ void gpgpu_sim_config::reg_options(option_parser_t opp) {
       opp, "-gpgpu_ptx_sim_mode", OPT_INT32,
       &(gpgpu_ctx->func_sim->g_ptx_sim_mode),
       "Select between Performance (default) or Functional simulation (1)", "0");
-  option_parser_register(
-      opp, "-enable_faults", OPT_INT32,
-      &(gpgpu_ctx->enable_faults),
-      "Enable the fault injector process", "0");
-  option_parser_register(
-      opp, "-sd_target", OPT_INT32,
-      &(gpgpu_ctx->sd_target),
-      "Define the SD target", "0");
-  option_parser_register(
-      opp, "-core_target", OPT_INT32,
-      &(gpgpu_ctx->core_target),
-      "Define the SD target", "0");
-  option_parser_register(
-      opp, "-mask", OPT_INT32,
-      &(gpgpu_ctx->mask),
-      "Define the mask injected", "0");
-  option_parser_register(
-      opp, "-stuckat", OPT_INT32,
-      &(gpgpu_ctx->stuckat),
-      "Define the bit value to inject", "0");
-  option_parser_register(
-      opp, "-type_instruction", OPT_INT32,
-      &(gpgpu_ctx->type_instruction),
-      "Define the instruction target", "0");
   option_parser_register(opp, "-gpgpu_clock_domains", OPT_CSTR,
                          &gpgpu_clock_domains,
                          "Clock Domain Frequencies in MhZ {<Core Clock>:<ICNT "
@@ -680,6 +656,35 @@ void gpgpu_sim_config::reg_options(option_parser_t opp) {
                          &(gpgpu_ctx->device_runtime->g_TB_launch_latency),
                          "thread block launch latency in cycles. Default: 0",
                          "0");
+
+    // Fault data
+  option_parser_register(opp, "-fault_enable", OPT_INT32,
+                         &(gpgpu_ctx->m_fault.m_enable),
+                         "Enable the fault process", "0");
+  option_parser_register(opp, "-fault_sm_id", OPT_INT32,
+                         &(gpgpu_ctx->m_fault.m_sm_id),
+                         "The Streaming Multiprocessor ID, depends of arch", "0");
+  option_parser_register(opp, "-fault_sm_sub_core_id", OPT_INT32,
+                         &(gpgpu_ctx->m_fault.m_sm_sub_core_id),
+                         "The Sub Core Streaming Multiprocessor ID", "0");
+  option_parser_register(opp, "-fault_core_type", OPT_INT32,
+                         &(gpgpu_ctx->m_fault.m_core_type),
+                         "The type (int 0, floating-point 1, sfu 2, tensor core 3, ...) unit (int, fp, tc, sfu)", "0");
+  option_parser_register(opp, "-fault_core_id", OPT_INT32,
+                         &(gpgpu_ctx->m_fault.m_core_id),
+                         "The Core ID", "0");
+  option_parser_register(opp, "-fault_in_out", OPT_INT32,
+                         &(gpgpu_ctx->m_fault.m_in_out),
+                         "The input 0 or output 1 core target", "0");
+  option_parser_register(opp, "-fault_operand", OPT_INT32,
+                         &(gpgpu_ctx->m_fault.m_operand),
+                         "The operand target", "0");
+  option_parser_register(opp, "-fault_mask", OPT_INT64,
+                         &(gpgpu_ctx->m_fault.m_mask),
+                         "The bit target", "0");
+  option_parser_register(opp, "-fault_stuckat", OPT_INT32,
+                         &(gpgpu_ctx->m_fault.m_stuck_at),
+                         "The bit value", "0");
 }
 
 /////////////////////////////////////////////////////////////////////////////

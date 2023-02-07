@@ -1196,7 +1196,7 @@ ptx_instruction::ptx_instruction(
     const std::list<int> &scalar_type, memory_space_t space_spec,
     const char *file, unsigned line, const char *source,
     const core_config *config, gpgpu_context *ctx)
-    : warp_inst_t(config), m_return_var(ctx) {
+    : warp_inst_t(config, opcode), m_return_var(ctx) {
   gpgpu_ctx = ctx;
   m_uid = ++(ctx->g_num_ptx_inst_uid);
   m_PC = 0;

@@ -78,13 +78,11 @@ class gpgpu_context {
   const warp_inst_t *ptx_fetch_inst(address_type pc);
   unsigned translate_pc_to_ptxlineno(unsigned pc);
 
-  //Faults injector
-  int enable_faults;
-  unsigned sd_target;
-  unsigned core_target;
-  unsigned mask;
-  unsigned stuckat;
-  unsigned type_instruction;
+  //Fault injector
+  fault_t m_fault;
+  void set_fault(fault_t fault) { m_fault = fault; };
+  fault_t get_fault() { return m_fault; };
+
 };
 gpgpu_context *GPGPU_Context();
 

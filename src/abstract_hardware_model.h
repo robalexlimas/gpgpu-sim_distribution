@@ -1012,7 +1012,23 @@ class warp_inst_t : public inst_t {
     m_is_cdp = 0;
     should_do_atomic = true;
   }
+  warp_inst_t(const core_config *config, int opcode) {
+    m_opcode = opcode;
+    m_uid = 0;
+    assert(config->warp_size <= MAX_WARP_SIZE);
+    m_config = config;
+    m_empty = true;
+    m_isatomic = false;
+    m_per_scalar_thread_valid = false;
+    m_mem_accesses_created = false;
+    m_cache_hit = false;
+    m_is_printf = false;
+    m_is_cdp = 0;
+    should_do_atomic = true;
+  }
   virtual ~warp_inst_t() {}
+
+  int get_opcode() const { return m_opcode; }
 
   // modifiers
   void broadcast_barrier_reduction(const active_mask_t &access_mask);
@@ -1154,6 +1170,7 @@ class warp_inst_t : public inst_t {
 
  protected:
   unsigned m_uid;
+  int m_opcode = -1;
   bool m_empty;
   bool m_cache_hit;
   unsigned long long issue_cycle;
@@ -1272,6 +1289,14 @@ class core_t {
     return reduction_storage[ctaid][barid];
   }
 
+  void set_sm_id(unsigned sm_id) {
+    m_sid = sm_id;
+  }
+
+  unsigned get_sm_id() { return m_sid; }
+
+  unsigned m_sid;
+
  protected:
   class gpgpu_sim *m_gpu;
   kernel_info_t *m_kernel;
@@ -1380,6 +1405,27 @@ class register_set {
  private:
   std::vector<warp_inst_t *> regs;
   const char *m_name;
+};
+
+struct fault_t
+{
+  unsigned int m_enable;
+  unsigned int m_sm_id;
+  unsigned int m_sm_sub_core_id;
+  unsigned int m_core_type;
+  unsigned int m_core_id;
+  unsigned int m_in_out;
+  unsigned int m_operand;
+  unsigned int m_mask;
+  unsigned int m_stuck_at;
+};
+
+class injector {
+  injector(fault_t fault) {
+    m_fault = fault;
+  }
+
+  fault_t m_fault;
 };
 
 #endif  // #ifdef __cplusplus

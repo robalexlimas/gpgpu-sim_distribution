@@ -1180,6 +1180,18 @@ void core_t::execute_warp_inst_t(warp_inst_t &inst, unsigned warpId) {
     if (inst.active(t)) {
       if (warpId == (unsigned(-1))) warpId = inst.warp_id();
       unsigned tid = m_warp_size * warpId + t;
+      printf("Operation: %d, Operand type: %d, Inst: %s\n", 
+        inst.op, 
+        inst.oprnd_type,
+        g_opcode_string[inst.get_opcode()]
+      );
+      printf("Thread id: %d, Lane id: %d, Warp id: %d, Scheduler id: %d, SMID: %d\n", 
+        m_warp_size * warpId + t,
+        t, 
+        warpId, 
+        inst.get_schd_id(), 
+        m_sid
+      );
       m_thread[tid]->ptx_exec_inst(inst, t);
 
       // virtual function
