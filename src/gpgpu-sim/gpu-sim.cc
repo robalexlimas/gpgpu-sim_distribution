@@ -658,6 +658,9 @@ void gpgpu_sim_config::reg_options(option_parser_t opp) {
                          "0");
 
     // Fault data
+  option_parser_register(opp, "-fault_debug", OPT_INT32,
+                         &(gpgpu_ctx->m_fault.m_debug),
+                         "Debug the fault process", "0");
   option_parser_register(opp, "-fault_enable", OPT_INT32,
                          &(gpgpu_ctx->m_fault.m_enable),
                          "Enable the fault process", "0");
@@ -669,7 +672,7 @@ void gpgpu_sim_config::reg_options(option_parser_t opp) {
                          "The Sub Core Streaming Multiprocessor ID", "0");
   option_parser_register(opp, "-fault_core_type", OPT_INT32,
                          &(gpgpu_ctx->m_fault.m_core_type),
-                         "The type (int 0, floating-point 1, sfu 2, tensor core 3, ...) unit (int, fp, tc, sfu)", "0");
+                         "The type (int 6, floating-point 5, sfu 2, tensor core 3, ...) unit (int, fp, tc, sfu)", "6");
   option_parser_register(opp, "-fault_core_id", OPT_INT32,
                          &(gpgpu_ctx->m_fault.m_core_id),
                          "The Core ID", "0");

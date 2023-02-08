@@ -1756,29 +1756,21 @@ void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id, current
           assert(0);
         }
       }
-
-      unsigned int operands = pI->get_num_operands();
-      printf("Inst: %s\n", current_status->m_instruction);
-      if (operands > 1) {
-        const operand_info &src  = pI->src1();
-        gpgpu_context *gpu = src.get_gpu();
-        printf("Fault: %u\n", gpu->m_fault.m_sm_id);
-      }
-
       // Tensorcore is warp synchronous operation. So these instructions needs
       // to be executed only once. To make the simulation faster removing the
       // redundant tensorcore operation
+
       if (!tensorcore_op(inst_opcode) ||
           ((tensorcore_op(inst_opcode)) && (lane_id == 0))) {
         switch (inst_opcode) {
 #define OP_DEF(OP, FUNC, STR, DST, CLASSIFICATION) \
   case OP:                                         \
-    FUNC(pI, this);                                \
+    FUNC(pI, this, current_status);                                \
     op_classification = CLASSIFICATION;            \
     break;
 #define OP_W_DEF(OP, FUNC, STR, DST, CLASSIFICATION) \
   case OP:                                           \
-    FUNC(pI, get_core(), inst);                      \
+    FUNC(pI, get_core(), inst, current_status);                      \
     op_classification = CLASSIFICATION;              \
     break;
 #include "opcodes.def"
@@ -1794,7 +1786,7 @@ void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id, current
       pI = pI_saved;
 
       // Run exit instruction if exit option included
-      if (pI->is_exit()) exit_impl(pI, this);
+      if (pI->is_exit()) exit_impl(pI, this, current_status);
     }
 
     const gpgpu_functional_sim_config &config = m_gpu->get_config();

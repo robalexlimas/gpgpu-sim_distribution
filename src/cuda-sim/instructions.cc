@@ -69,6 +69,140 @@ const char *g_opcode_string[NUM_OPCODES] = {
 };
 // Using profiled information::check the TensorCoreMatrixArrangement.xls for
 // details
+
+void printf_fault_degub(current_status_t* current_status, fault_t fault, ptx_reg_t previousValue, ptx_reg_t newValue, unsigned int i_type) {
+  printf("Degub mode enable\n");
+  printf("SM: %u, SubCoreSm: %u, Core: %u, Unit: %u, InOut: %u, Ints: %s\n",
+    current_status->m_sm_id,
+    current_status->m_sch_id,
+    current_status->m_lane_id,
+    current_status->m_operation_type,
+    0,
+    current_status->m_instruction
+  );
+  printf("Fault -> operand: %u, mask: %u, stuck at: %u, type: %u\n",
+    fault.m_operand,
+    fault.m_mask,
+    fault.m_stuck_at,
+    i_type
+  );
+  printf("Previous value: ");
+  switch (i_type) {
+    case S8_TYPE:
+        printf("%d, new value %d", previousValue.s8, newValue.s8);
+        break;
+    case S16_TYPE:
+      printf("%d, new value %d", previousValue.s16, newValue.s16);
+      break;
+    case S32_TYPE:
+      printf("%d, new value %d", previousValue.s32, newValue.s32);
+      break;
+    case S64_TYPE:
+      printf("%d, new value %d", previousValue.s64, newValue.s64);
+      break;
+    case U8_TYPE:
+      printf("%u, new value %u", previousValue.u8, newValue.u8);
+      break;
+    case U16_TYPE:
+      printf("%u, new value %u", previousValue.u16, newValue.u16);
+      break;
+    case U32_TYPE:
+      printf("%u, new value %u", previousValue.u32, newValue.u32);
+      break;
+    case U64_TYPE:
+      printf("%u, new value %u", previousValue.u64, newValue.u64);
+      break;
+    case F16_TYPE:
+      printf("%f, new value %f", previousValue.f16, newValue.f16);
+      break;
+    case F32_TYPE:
+      printf("%f, new value %f", previousValue.f32, newValue.f32);
+      break;
+    case F64_TYPE:
+      printf("%f, new value %f", previousValue.f64, newValue.f64);
+      break;
+    default:
+      break;
+  }
+  printf("\n");
+};
+
+ptx_reg_t injected_value(unsigned int mask, ptx_reg_t value, unsigned i_type, unsigned int stuckat) {
+  ptx_reg_t result;
+  result = value;
+  float y;
+  int int_d;
+  unsigned int maskReal = stuckat == 0 ? ~mask : mask;
+  switch (i_type) {
+    case S8_TYPE:
+        result.s8 = stuckat == 0 ? value.s8 & maskReal : value.s8 | maskReal;
+        break;
+      case S16_TYPE:
+        result.s16 = stuckat == 0 ? value.s16 & maskReal : value.s16 | maskReal;
+        break;
+      case S32_TYPE:
+        result.s32 = stuckat == 0 ? value.s32 & maskReal : value.s32 | maskReal;
+        break;
+      case S64_TYPE:
+        result.s64 = stuckat == 0 ? value.s64 & maskReal : value.s64 | maskReal;
+        break;
+      case U8_TYPE:
+        result.u8 = stuckat == 0 ? value.u8 & maskReal : value.u8 | maskReal;
+        break;
+      case U16_TYPE:
+        result.u16 =  stuckat == 0 ? value.u16 & maskReal : value.u16 | maskReal;
+        break;
+      case U32_TYPE:
+        result.u32 = stuckat == 0 ? value.u32 & maskReal : value.u32 | maskReal;
+        break;
+      case U64_TYPE:
+        result.u64 = stuckat == 0 ? value.u64 & maskReal : value.u64 | maskReal;
+        break;
+      case F16_TYPE:
+        int_d = *(int *)&value.f16;
+        int_d = stuckat == 0 ? int_d & maskReal : int_d | maskReal;
+        y = *(float *)&(int_d);
+        result.f16 = y;
+        break;
+      case F32_TYPE:
+        int_d = *(int *)&value.f32;
+        int_d = stuckat == 0 ? int_d & maskReal : int_d | maskReal;
+        y = *(float *)&(int_d);
+        result.f32 = y;
+        break;
+      case F64_TYPE:
+        int_d = *(int *)&value.f64;
+        int_d = stuckat == 0 ? int_d & maskReal : int_d | maskReal;
+        y = *(float *)&(int_d);
+        result.f64 = y;
+        break;
+      default:
+        break;
+  }
+  return result;
+}
+
+ptx_reg_t injected_value(fault_t fault, current_status_t* current_status, ptx_reg_t reg, unsigned int i_type) {
+  ptx_reg_t result;
+  // Validate is GPGPU-Sim is using the target hw
+  if (current_status->m_sm_id == fault.m_sm_id &&
+      current_status->m_sch_id == fault.m_sm_sub_core_id &&
+      (current_status->m_lane_id == fault.m_core_id || current_status->m_lane_id == fault.m_core_id + 16) &&
+      current_status->m_operation_type == fault.m_core_type) {
+    result = injected_value(fault.m_mask, reg, i_type, fault.m_stuck_at);
+    // If degub
+    if (fault.m_debug) printf_fault_degub(current_status, fault, reg, result, i_type);
+  }
+}
+
+ptx_reg_t injected_value(current_status_t* current_status, gpgpu_context* gpu, ptx_reg_t reg, unsigned int index, unsigned i_type, unsigned int in_out) {
+  ptx_reg_t result = reg;
+  fault_t fault = gpu->get_fault();
+  if (fault.m_enable && fault.m_in_out == in_out && index == fault.m_operand) 
+    result = injected_value(fault, current_status, reg, i_type);
+  return result;
+}
+
 unsigned thread_group_offset(int thread, unsigned wmma_type,
                              unsigned wmma_layout, unsigned type, int stride) {
   unsigned offset;
@@ -474,7 +608,6 @@ ptx_reg_t ptx_thread_info::get_operand_value(const operand_info &op,
         assert(0);
     }
   }
-
   return finalResult;
 }
 
@@ -838,13 +971,16 @@ void ptx_thread_info::set_wmma_vector_operand_values(
 
 #define MY_EXCH(a, b) b
 
-void abs_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t a, d;
+void abs_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t a, a_, d;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
 
   unsigned i_type = pI->get_type();
-  a = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  a = injected_value(current_status, gpu, a_, 0, i_type, 0);
 
   switch (i_type) {
     case S16_TYPE:
@@ -881,9 +1017,10 @@ void abs_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, d, i_type, thread, pI);
 }
 
-void addp_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void addp_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   // PTXPlus add instruction with carry (carry is kept in a predicate) register
   ptx_reg_t src1_data, src2_data, src3_data, data;
+  ptx_reg_t src1_data_, src2_data_, src3_data_;
   int overflow = 0;
   int carry = 0;
 
@@ -895,9 +1032,15 @@ void addp_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   const operand_info &src3 = pI->src3();
 
   unsigned i_type = pI->get_type();
-  src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  src2_data = thread->get_operand_value(src2, dst, i_type, thread, 1);
-  src3_data = thread->get_operand_value(src3, dst, i_type, thread, 1);
+  src1_data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  src2_data_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  src3_data_ = thread->get_operand_value(src3, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  
+  src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
+  src2_data = injected_value(current_status, gpu, src2_data_, 1, i_type, 0);
+  src3_data = injected_value(current_status, gpu, src3_data_, 2, i_type, 0);
 
   unsigned rounding_mode = pI->rounding_mode();
   int orig_rm = fegetround();
@@ -982,8 +1125,9 @@ void addp_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, data, i_type, thread, pI, overflow, carry);
 }
 
-void add_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void add_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   ptx_reg_t src1_data, src2_data, data;
+  ptx_reg_t src1_data_, src2_data_;
   int overflow = 0;
   int carry = 0;
 
@@ -994,8 +1138,12 @@ void add_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   const operand_info &src2 = pI->src2();
 
   unsigned i_type = pI->get_type();
-  src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  src2_data = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  src1_data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  src2_data_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
+  src2_data = injected_value(current_status, gpu, src2_data_, 1, i_type, 0);
 
   unsigned rounding_mode = pI->rounding_mode();
   int orig_rm = fegetround();
@@ -1073,20 +1221,25 @@ void add_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, data, i_type, thread, pI, overflow, carry);
 }
 
-void addc_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void addc_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
 
-void and_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void and_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   ptx_reg_t src1_data, src2_data, data;
+  ptx_reg_t src1_data_, src2_data_;
 
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
 
   unsigned i_type = pI->get_type();
-  src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  src2_data = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  src1_data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  src2_data_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
+  src2_data = injected_value(current_status, gpu, src2_data_, 1, i_type, 0);
 
   // the way ptxplus handles predicates: 1 = false and 0 = true
   if (i_type == PRED_TYPE)
@@ -1097,16 +1250,21 @@ void and_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, data, i_type, thread, pI);
 }
 
-void andn_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void andn_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   ptx_reg_t src1_data, src2_data, data;
+  ptx_reg_t src1_data_, src2_data_;
 
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
 
   unsigned i_type = pI->get_type();
-  src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  src2_data = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  src1_data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  src2_data_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
+  src2_data = injected_value(current_status, gpu, src2_data_, 1, i_type, 0);
 
   switch (i_type) {
     case B16_TYPE:
@@ -1462,7 +1620,7 @@ void atom_callback(const inst_t *inst, ptx_thread_info *thread) {
 
 // atom_impl will now result in a callback being called in mem_ctrl_pop
 // (gpu-sim.c)
-void atom_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void atom_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   // SYNTAX
   // atom.space.operation.type d, a, b[, c]; (now read in callback)
 
@@ -1506,7 +1664,7 @@ void atom_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->m_last_dram_callback.instruction = pI;
 }
 
-void bar_impl(const ptx_instruction *pIin, ptx_thread_info *thread) {
+void bar_impl(const ptx_instruction *pIin, ptx_thread_info *thread, current_status_t *current_status) {
   ptx_instruction *pI = const_cast<ptx_instruction *>(pIin);
   unsigned bar_op = pI->barrier_op();
   unsigned red_op = pI->get_atomic();
@@ -1607,16 +1765,22 @@ void bar_impl(const ptx_instruction *pIin, ptx_thread_info *thread) {
   thread->m_last_dram_callback.instruction = pIin;
 }
 
-void bfe_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void bfe_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   unsigned i_type = pI->get_type();
   unsigned msb = (i_type == U32_TYPE || i_type == S32_TYPE) ? 31 : 63;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
   const operand_info &src3 = pI->src3();
-  ptx_reg_t src = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  ptx_reg_t b = thread->get_operand_value(src2, dst, i_type, thread, 1);
-  ptx_reg_t c = thread->get_operand_value(src3, dst, i_type, thread, 1);
+  ptx_reg_t src_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  ptx_reg_t b_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  ptx_reg_t c_ = thread->get_operand_value(src3, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t src = injected_value(current_status, gpu, src_, 0, i_type, 0);
+  ptx_reg_t b = injected_value(current_status, gpu, b_, 1, i_type, 0);
+  ptx_reg_t c = injected_value(current_status, gpu, c_, 2, i_type, 0);
+
   ptx_reg_t data;
   unsigned pos = b.u32 & 0xFF;
   unsigned len = c.u32 & 0xFF;
@@ -1671,10 +1835,12 @@ void bfe_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, data, i_type, thread, pI);
 }
 
-void bfi_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void bfi_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   int i, max;
   ptx_reg_t src1_data, src2_data;
   ptx_reg_t src3_data, src4_data, data;
+  ptx_reg_t src1_data_, src2_data_;
+  ptx_reg_t src3_data_, src4_data_;
 
   const operand_info &dst =
       pI->dst();  // get operand info of sources and destination
@@ -1685,10 +1851,16 @@ void bfi_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   const operand_info &src4 = pI->src4();
 
   unsigned i_type = pI->get_type();
-  src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  src2_data = thread->get_operand_value(src2, dst, i_type, thread, 1);
-  src3_data = thread->get_operand_value(src3, dst, i_type, thread, 1);
-  src4_data = thread->get_operand_value(src4, dst, i_type, thread, 1);
+  src1_data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  src2_data_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  src3_data_ = thread->get_operand_value(src3, dst, i_type, thread, 1);
+  src4_data_ = thread->get_operand_value(src4, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
+  src2_data = injected_value(current_status, gpu, src2_data_, 1, i_type, 0);
+  src3_data = injected_value(current_status, gpu, src3_data_, 2, i_type, 0);
+  src4_data = injected_value(current_status, gpu, src4_data_, 3, i_type, 0);
 
   switch (i_type) {
     case B32_TYPE:
@@ -1711,13 +1883,17 @@ void bfi_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   }
   thread->set_operand_value(dst, data, i_type, thread, pI);
 }
-void bfind_impl(const ptx_instruction *pI, ptx_thread_info *thread)
+void bfind_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status)
 {
   const operand_info &dst  = pI->dst();
   const operand_info &src1 = pI->src1();
   const unsigned i_type = pI->get_type();
 
-  const ptx_reg_t src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  const ptx_reg_t src1_data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
+
   const int msb = ( i_type == U32_TYPE || i_type == S32_TYPE) ? 31 : 63;
 
   unsigned long a = 0;
@@ -1747,7 +1923,7 @@ void bfind_impl(const ptx_instruction *pI, ptx_thread_info *thread)
 
 }
 
-void bra_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void bra_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   const operand_info &target = pI->dst();
   ptx_reg_t target_pc =
       thread->get_operand_value(target, target, U32_TYPE, thread, 1);
@@ -1756,7 +1932,7 @@ void bra_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_npc(target_pc);
 }
 
-void brx_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void brx_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   const operand_info &target = pI->dst();
   ptx_reg_t target_pc =
       thread->get_operand_value(target, target, U32_TYPE, thread, 1);
@@ -1765,7 +1941,7 @@ void brx_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_npc(target_pc);
 }
 
-void break_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void break_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   const operand_info &target = thread->pop_breakaddr();
   ptx_reg_t target_pc =
       thread->get_operand_value(target, target, U32_TYPE, thread, 1);
@@ -1774,7 +1950,7 @@ void break_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_npc(target_pc);
 }
 
-void breakaddr_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void breakaddr_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   const operand_info &target = pI->dst();
   thread->push_breakaddr(target);
   assert(
@@ -1782,12 +1958,15 @@ void breakaddr_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       false);  // pdom analysis cannot handle if this instruction is predicated
 }
 
-void brev_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t src1_data, data;
+void brev_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t src1_data_, data;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   unsigned i_type = pI->get_type();
-  src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  src1_data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
 
   unsigned msb;
   switch (i_type) {
@@ -1808,7 +1987,7 @@ void brev_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   }
   thread->set_operand_value(dst, data, i_type, thread, pI);
 }
-void brkpt_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void brkpt_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
 
@@ -1885,7 +2064,7 @@ void mapping(int thread, int wmma_type, int wmma_layout, int type, int index,
   }
 }
 
-void mma_impl(const ptx_instruction *pI, core_t *core, warp_inst_t inst) {
+void mma_impl(const ptx_instruction *pI, core_t *core, warp_inst_t inst, current_status_t *current_status) {
   int i, j, k, thrd;
   int row, col, offset;
   ptx_reg_t matrix_a[16][16];
@@ -2122,7 +2301,7 @@ void mma_impl(const ptx_instruction *pI, core_t *core, warp_inst_t inst) {
   }
 }
 
-void call_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void call_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   static unsigned call_uid_next = 1;
 
   const operand_info &target = pI->func_addr();
@@ -2216,7 +2395,7 @@ void call_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
 }
 
 // Ptxplus version of call instruction. Jumps to a label not a different Kernel.
-void callp_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void callp_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   static unsigned call_uid_next = 1;
 
   const operand_info &target = pI->dst();
@@ -2239,13 +2418,16 @@ void callp_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_npc(target_pc);
 }
 
-void clz_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t a, d;
+void clz_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t a_, d;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
 
   unsigned i_type = pI->get_type();
-  a = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, i_type, 0);
 
   int max;
   unsigned long long mask;
@@ -2274,13 +2456,16 @@ void clz_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, d, B32_TYPE, thread, pI);
 }
 
-void cnot_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t a, b, d;
+void cnot_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t a_, b, d;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
 
   unsigned i_type = pI->get_type();
-  a = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, i_type, 0);
 
   switch (i_type) {
     case PRED_TYPE:
@@ -2304,13 +2489,16 @@ void cnot_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, d, i_type, thread, pI);
 }
 
-void cos_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t a, d;
+void cos_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t a_, d;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
 
   unsigned i_type = pI->get_type();
-  a = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, i_type, 0);
 
   switch (i_type) {
     case F32_TYPE:
@@ -3018,7 +3206,7 @@ void ptx_saturate(ptx_reg_t &data, int saturation_mode, int type) {
   }
 }
 
-void cvt_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void cvt_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   unsigned to_type = pI->get_type();
@@ -3035,7 +3223,10 @@ void cvt_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
       type_info_key::type_decode(from_type, from_width, from_sign);
   unsigned dst_fmt = type_info_key::type_decode(to_type, to_width, to_sign);
 
-  ptx_reg_t data = thread->get_operand_value(src1, dst, from_type, thread, 1);
+  ptx_reg_t data_ = thread->get_operand_value(src1, dst, from_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t data = injected_value(current_status, gpu, data_, 0, from_type, 0);
 
   if (pI->is_neg()) {
     switch (from_type) {
@@ -3084,7 +3275,7 @@ void cvt_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, data, to_type, thread, pI);
 }
 
-void cvta_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void cvta_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   ptx_reg_t data;
 
   const operand_info &dst = pI->dst();
@@ -3093,7 +3284,11 @@ void cvta_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   bool to_non_generic = pI->is_to();
 
   unsigned i_type = pI->get_type();
-  ptx_reg_t from_addr = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  ptx_reg_t from_addr_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t from_addr = injected_value(current_status, gpu, from_addr_, 0, i_type, 0);
+
   addr_t from_addr_hw = (addr_t)from_addr.u64;
   addr_t to_addr_hw = 0;
   unsigned smid = thread->get_hw_sid();
@@ -3136,7 +3331,7 @@ void cvta_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_reg(dst.get_symbol(), to_addr);
 }
 
-void div_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void div_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   ptx_reg_t data;
 
   const operand_info &dst = pI->dst();
@@ -3145,8 +3340,12 @@ void div_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
 
   unsigned i_type = pI->get_type();
 
-  ptx_reg_t src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  ptx_reg_t src2_data = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  ptx_reg_t src1_data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  ptx_reg_t src2_data_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
+  ptx_reg_t src2_data = injected_value(current_status, gpu, src2_data_, 1, i_type, 0);
 
   switch (i_type) {
     case S8_TYPE:
@@ -3202,19 +3401,22 @@ void div_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, data, i_type, thread, pI);
 }
 
-void dp4a_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void dp4a_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   printf("DP4A instruction not implemented yet");
   assert(0);
 }
 
-void ex2_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t src1_data, src2_data, data;
+void ex2_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t src1_data_, src2_data, data;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
 
   unsigned i_type = pI->get_type();
 
-  src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  src1_data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
 
   switch (i_type) {
     case F32_TYPE:
@@ -3229,7 +3431,7 @@ void ex2_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, data, i_type, thread, pI);
 }
 
-void exit_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void exit_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   thread->set_done();
   thread->exitCore();
   thread->registerExit();
@@ -3238,11 +3440,11 @@ void exit_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
 void mad_def(const ptx_instruction *pI, ptx_thread_info *thread,
              bool use_carry = false);
 
-void fma_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void fma_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   mad_def(pI, thread);
 }
 
-void isspacep_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void isspacep_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   ptx_reg_t a;
   bool t = false;
 
@@ -3397,14 +3599,14 @@ void ld_exec(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->m_last_memory_space = space;
 }
 
-void ld_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void ld_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   ld_exec(pI, thread);
 }
-void ldu_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void ldu_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   ld_exec(pI, thread);
 }
 
-void mma_st_impl(const ptx_instruction *pI, core_t *core, warp_inst_t &inst) {
+void mma_st_impl(const ptx_instruction *pI, core_t *core, warp_inst_t &inst, current_status_t *current_status) {
   size_t size;
   unsigned smid;
   int t;
@@ -3527,7 +3729,7 @@ void mma_st_impl(const ptx_instruction *pI, core_t *core, warp_inst_t &inst) {
   }
 }
 
-void mma_ld_impl(const ptx_instruction *pI, core_t *core, warp_inst_t &inst) {
+void mma_ld_impl(const ptx_instruction *pI, core_t *core, warp_inst_t &inst, current_status_t *current_status) {
   size_t size;
   int t, i;
   unsigned smid;
@@ -3750,14 +3952,17 @@ void mma_ld_impl(const ptx_instruction *pI, core_t *core, warp_inst_t &inst) {
   }
 }
 
-void lg2_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t a, d;
+void lg2_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t a_, d;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
 
   unsigned i_type = pI->get_type();
 
-  a = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, i_type, 0);
 
   switch (i_type) {
     case F32_TYPE:
@@ -3772,7 +3977,7 @@ void lg2_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, d, i_type, thread, pI);
 }
 
-void mad24_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void mad24_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
@@ -3780,9 +3985,14 @@ void mad24_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   ptx_reg_t d, t;
 
   unsigned i_type = pI->get_type();
-  ptx_reg_t a = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  ptx_reg_t b = thread->get_operand_value(src2, dst, i_type, thread, 1);
-  ptx_reg_t c = thread->get_operand_value(src3, dst, i_type, thread, 1);
+  ptx_reg_t a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  ptx_reg_t b_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  ptx_reg_t c_ = thread->get_operand_value(src3, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, i_type, 0);
+  ptx_reg_t b = injected_value(current_status, gpu, b_, 1, i_type, 0);
+  ptx_reg_t c = injected_value(current_status, gpu, c_, 2, i_type, 0);
 
   unsigned sat_mode = pI->saturation_mode();
 
@@ -3821,15 +4031,15 @@ void mad24_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, d, i_type, thread, pI);
 }
 
-void mad_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void mad_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   mad_def(pI, thread, false);
 }
 
-void madp_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void madp_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   mad_def(pI, thread, true);
 }
 
-void madc_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void madc_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   mad_def(pI, thread, true);
 }
 
@@ -4014,15 +4224,19 @@ bool isNaN(float x) { return std::isnan(x); }
 
 bool isNaN(double x) { return std::isnan(x); }
 
-void max_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t a, b, d;
+void max_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t a_, b_, d;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
 
   unsigned i_type = pI->get_type();
-  a = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  b = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  b_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, i_type, 0);
+  ptx_reg_t b = injected_value(current_status, gpu, b_, 1, i_type, 0);
 
   switch (i_type) {
     case U16_TYPE:
@@ -4059,19 +4273,23 @@ void max_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, d, i_type, thread, pI);
 }
 
-void membar_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void membar_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   // handled by timing simulator
 }
 
-void min_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t a, b, d;
+void min_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t a_, b_, d;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
 
   unsigned i_type = pI->get_type();
-  a = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  b = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  b_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, i_type, 0);
+  ptx_reg_t b = injected_value(current_status, gpu, b_, 1, i_type, 0);
 
   switch (i_type) {
     case U16_TYPE:
@@ -4108,7 +4326,7 @@ void min_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, d, i_type, thread, pI);
 }
 
-void mov_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void mov_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   ptx_reg_t data;
 
   const operand_info &dst = pI->dst();
@@ -4229,16 +4447,20 @@ void mov_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   }
 }
 
-void mul24_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t src1_data, src2_data, data;
+void mul24_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t src1_data_, src2_data_, data;
 
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
 
   unsigned i_type = pI->get_type();
-  src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  src2_data = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  src1_data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  src2_data_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
+  ptx_reg_t src2_data = injected_value(current_status, gpu, src2_data_, 1, i_type, 0);
 
   // src1_data = srcOperandModifiers(src1_data, src1, dst, i_type, thread);
   // src2_data = srcOperandModifiers(src2_data, src2, dst, i_type, thread);
@@ -4272,7 +4494,7 @@ void mul24_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, data, i_type, thread, pI);
 }
 
-void mul_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void mul_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   ptx_reg_t data;
 
   const operand_info &dst = pI->dst();
@@ -4281,8 +4503,12 @@ void mul_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   ptx_reg_t d, t;
 
   unsigned i_type = pI->get_type();
-  ptx_reg_t a = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  ptx_reg_t b = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  ptx_reg_t a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  ptx_reg_t b_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, i_type, 0);
+  ptx_reg_t b = injected_value(current_status, gpu, b_, 1, i_type, 0);
 
   unsigned rounding_mode = pI->rounding_mode();
 
@@ -4430,14 +4656,17 @@ void mul_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, d, i_type, thread, pI);
 }
 
-void neg_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t src1_data, src2_data, data;
+void neg_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t src1_data_, src2_data, data;
 
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
 
   unsigned to_type = pI->get_type();
-  src1_data = thread->get_operand_value(src1, dst, to_type, thread, 1);
+  src1_data_ = thread->get_operand_value(src1, dst, to_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t src1_data = injected_value(current_status, gpu, src1_data_, 0, to_type, 0);
 
   switch (to_type) {
     case S8_TYPE:
@@ -4472,16 +4701,20 @@ void neg_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
 
 // nandn bitwise negates second operand then bitwise nands with the first
 // operand
-void nandn_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t src1_data, src2_data, data;
+void nandn_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t src1_data_, src2_data_, data;
 
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
 
   unsigned i_type = pI->get_type();
-  src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  src2_data = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  src1_data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  src2_data_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
+  ptx_reg_t src2_data = injected_value(current_status, gpu, src2_data_, 1, i_type, 0);
 
   // the way ptxplus handles predicates: 1 = false and 0 = true
   if (i_type == PRED_TYPE)
@@ -4493,16 +4726,20 @@ void nandn_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
 }
 
 // norn bitwise negates first operand then bitwise ands with the second operand
-void norn_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t src1_data, src2_data, data;
+void norn_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t src1_data_, src2_data_, data;
 
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
 
   unsigned i_type = pI->get_type();
-  src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  src2_data = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  src1_data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  src2_data_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
+  ptx_reg_t src2_data = injected_value(current_status, gpu, src2_data_, 1, i_type, 0);
 
   // the way ptxplus handles predicates: 1 = false and 0 = true
   if (i_type == PRED_TYPE)
@@ -4513,13 +4750,16 @@ void norn_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, data, i_type, thread, pI);
 }
 
-void not_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t a, b, d;
+void not_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t a_, b, d;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
 
   unsigned i_type = pI->get_type();
-  a = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, i_type, 0);
 
   switch (i_type) {
     case PRED_TYPE:
@@ -4543,15 +4783,19 @@ void not_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, d, i_type, thread, pI);
 }
 
-void or_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t src1_data, src2_data, data;
+void or_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t src1_data_, src2_data_, data;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
 
   unsigned i_type = pI->get_type();
-  src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  src2_data = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  src1_data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  src2_data_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
+  ptx_reg_t src2_data = injected_value(current_status, gpu, src2_data_, 1, i_type, 0);
 
   // the way ptxplus handles predicates: 1 = false and 0 = true
   if (i_type == PRED_TYPE)
@@ -4562,15 +4806,19 @@ void or_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, data, i_type, thread, pI);
 }
 
-void orn_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t src1_data, src2_data, data;
+void orn_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t src1_data_, src2_data_, data;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
 
   unsigned i_type = pI->get_type();
-  src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  src2_data = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  src1_data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  src2_data_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
+  ptx_reg_t src2_data = injected_value(current_status, gpu, src2_data_, 1, i_type, 0);
 
   // the way ptxplus handles predicates: 1 = false and 0 = true
   if (i_type == PRED_TYPE)
@@ -4581,16 +4829,19 @@ void orn_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, data, i_type, thread, pI);
 }
 
-void pmevent_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void pmevent_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
-void popc_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t src_data, data;
+void popc_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t src_data_, data;
   const operand_info &dst = pI->dst();
   const operand_info &src = pI->src1();
 
   unsigned i_type = pI->get_type();
-  src_data = thread->get_operand_value(src, dst, i_type, thread, 1);
+  src_data_ = thread->get_operand_value(src, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t src_data = injected_value(current_status, gpu, src_data_, 0, i_type, 0);
 
   switch (i_type) {
     case B32_TYPE: {
@@ -4609,10 +4860,10 @@ void popc_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
 
   thread->set_operand_value(dst, data, i_type, thread, pI);
 }
-void prefetch_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void prefetch_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
-void prefetchu_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void prefetchu_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
 
@@ -4681,8 +4932,8 @@ int read_byte(int mode, int control, int d_sel_index, signed long long value) {
   return (returnval << 8 * d_sel_index);
 }
 
-void prmt_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t src1_data, src2_data, src3_data, tmpdata, data;
+void prmt_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t src1_data_, src2_data_, src3_data_, tmpdata, data;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
@@ -4691,9 +4942,14 @@ void prmt_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   unsigned mode = pI->prmt_op();
   unsigned i_type = pI->get_type();
 
-  src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  src2_data = thread->get_operand_value(src2, dst, i_type, thread, 1);
-  src3_data = thread->get_operand_value(src3, dst, i_type, thread, 1);
+  src1_data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  src2_data_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  src3_data_ = thread->get_operand_value(src3, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
+  ptx_reg_t src2_data = injected_value(current_status, gpu, src2_data_, 1, i_type, 0);
+  ptx_reg_t src3_data = injected_value(current_status, gpu, src3_data_, 2, i_type, 0);
 
   tmpdata.s64 = src1_data.s32 | (src2_data.s64 << 32);
   int ctl[4];
@@ -4720,13 +4976,16 @@ void prmt_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, data, i_type, thread, pI);
 }
 
-void rcp_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t src1_data, src2_data, data;
+void rcp_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t src1_data_, src2_data, data;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
 
   unsigned i_type = pI->get_type();
-  src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  src1_data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
 
   switch (i_type) {
     case F32_TYPE:
@@ -4745,20 +5004,24 @@ void rcp_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, data, i_type, thread, pI);
 }
 
-void red_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void red_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
 
-void rem_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t src1_data, src2_data, data;
+void rem_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t src1_data_, src2_data_, data;
 
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
 
   unsigned i_type = pI->get_type();
-  src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  src2_data = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  src1_data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  src2_data_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
+  ptx_reg_t src2_data = injected_value(current_status, gpu, src2_data_, 1, i_type, 0);
 
   switch (i_type) {
     case S32_TYPE:
@@ -4781,7 +5044,7 @@ void rem_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, data, i_type, thread, pI);
 }
 
-void ret_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void ret_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   bool empty = thread->callstack_pop();
   if (empty) {
     thread->set_done();
@@ -4791,7 +5054,7 @@ void ret_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
 }
 
 // Ptxplus version of ret instruction.
-void retp_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void retp_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   bool empty = thread->callstack_pop_plus();
   if (empty) {
     thread->set_done();
@@ -4800,13 +5063,16 @@ void retp_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   }
 }
 
-void rsqrt_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t a, d;
+void rsqrt_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t a_, d;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
 
   unsigned i_type = pI->get_type();
-  a = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, i_type, 0);
 
   switch (i_type) {
     case F32_TYPE:
@@ -4845,17 +5111,22 @@ void rsqrt_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
 
 #define SAD(d, a, b, c) d = c + ((a < b) ? (b - a) : (a - b))
 
-void sad_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t a, b, c, d;
+void sad_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t a_, b_, c_, d;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
   const operand_info &src3 = pI->src3();
 
   unsigned i_type = pI->get_type();
-  a = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  b = thread->get_operand_value(src2, dst, i_type, thread, 1);
-  c = thread->get_operand_value(src3, dst, i_type, thread, 1);
+  a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  b_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  c_ = thread->get_operand_value(src3, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, i_type, 0);
+  ptx_reg_t b = injected_value(current_status, gpu, b_, 1, i_type, 0);
+  ptx_reg_t c = injected_value(current_status, gpu, c_, 2, i_type, 0);
 
   switch (i_type) {
     case U16_TYPE:
@@ -4892,18 +5163,23 @@ void sad_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, d, i_type, thread, pI);
 }
 
-void selp_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void selp_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
   const operand_info &src3 = pI->src3();
 
-  ptx_reg_t a, b, c, d;
+  ptx_reg_t a_, b_, c_, d;
 
   unsigned i_type = pI->get_type();
-  a = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  b = thread->get_operand_value(src2, dst, i_type, thread, 1);
-  c = thread->get_operand_value(src3, dst, i_type, thread, 1);
+  a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  b_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  c_ = thread->get_operand_value(src3, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, i_type, 0);
+  ptx_reg_t b = injected_value(current_status, gpu, b_, 1, i_type, 0);
+  ptx_reg_t c = injected_value(current_status, gpu, c_, 2, i_type, 0);
 
   // predicate value was changed so the lowest bit being set means the zero flag
   // is set. As a result, the value of c.pred must be inverted to get proper
@@ -5254,8 +5530,8 @@ bool CmpOp(int type, ptx_reg_t a, ptx_reg_t b, unsigned cmpop) {
   return t;
 }
 
-void setp_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t a, b;
+void setp_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t a_, b_;
 
   int t = 0;
   const operand_info &dst = pI->dst();
@@ -5267,8 +5543,12 @@ void setp_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
 
   unsigned type = pI->get_type();
   unsigned cmpop = pI->get_cmpop();
-  a = thread->get_operand_value(src1, dst, type, thread, 1);
-  b = thread->get_operand_value(src2, dst, type, thread, 1);
+  a_ = thread->get_operand_value(src1, dst, type, thread, 1);
+  b_ = thread->get_operand_value(src2, dst, type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, type, 0);
+  ptx_reg_t b = injected_value(current_status, gpu, b_, 1, type, 0);
 
   t = CmpOp(type, a, b, cmpop);
 
@@ -5282,8 +5562,8 @@ void setp_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, data, PRED_TYPE, thread, pI);
 }
 
-void set_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t a, b;
+void set_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t a_, b_;
 
   int t = 0;
   const operand_info &dst = pI->dst();
@@ -5296,8 +5576,12 @@ void set_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   unsigned src_type = pI->get_type2();
   unsigned cmpop = pI->get_cmpop();
 
-  a = thread->get_operand_value(src1, dst, src_type, thread, 1);
-  b = thread->get_operand_value(src2, dst, src_type, thread, 1);
+  a_ = thread->get_operand_value(src1, dst, src_type, thread, 1);
+  b_ = thread->get_operand_value(src2, dst, src_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, src_type, 0);
+  ptx_reg_t b = injected_value(current_status, gpu, b_, 1, src_type, 0);
 
   // Take abs of first operand if needed
   if (pI->is_abs()) {
@@ -5346,7 +5630,7 @@ void set_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, data, pI->get_type(), thread, pI);
 }
 
-void shfl_impl(const ptx_instruction *pI, core_t *core, warp_inst_t inst) {
+void shfl_impl(const ptx_instruction *pI, core_t *core, warp_inst_t inst, current_status_t *current_status) {
   unsigned i_type = pI->get_type();
   int tid;
 
@@ -5429,15 +5713,19 @@ void shfl_impl(const ptx_instruction *pI, core_t *core, warp_inst_t inst) {
   }
 }
 
-void shl_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t a, b, d;
+void shl_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t a_, b_, d;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
 
   unsigned i_type = pI->get_type();
-  a = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  b = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  b_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, i_type, 0);
+  ptx_reg_t b = injected_value(current_status, gpu, b_, 1, i_type, 0);
 
   switch (i_type) {
     case B16_TYPE:
@@ -5470,15 +5758,19 @@ void shl_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, d, i_type, thread, pI);
 }
 
-void shr_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t a, b, d;
+void shr_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t a_, b_, d;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
 
   unsigned i_type = pI->get_type();
-  a = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  b = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  b_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, i_type, 0);
+  ptx_reg_t b = injected_value(current_status, gpu, b_, 1, i_type, 0);
 
   switch (i_type) {
     case U16_TYPE:
@@ -5549,13 +5841,16 @@ void shr_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, d, i_type, thread, pI);
 }
 
-void sin_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t a, d;
+void sin_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t a_, d;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
 
   unsigned i_type = pI->get_type();
-  a = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, i_type, 0);
 
   switch (i_type) {
     case F32_TYPE:
@@ -5570,20 +5865,25 @@ void sin_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, d, i_type, thread, pI);
 }
 
-void slct_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void slct_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
   const operand_info &src3 = pI->src3();
 
-  ptx_reg_t a, b, c, d;
+  ptx_reg_t a_, b_, c_, d;
 
   unsigned i_type = pI->get_type();
   unsigned c_type = pI->get_type2();
   bool t = false;
-  a = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  b = thread->get_operand_value(src2, dst, i_type, thread, 1);
-  c = thread->get_operand_value(src3, dst, c_type, thread, 1);
+  a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  b_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  c_ = thread->get_operand_value(src3, dst, c_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, i_type, 0);
+  ptx_reg_t b = injected_value(current_status, gpu, b_, 1, i_type, 0);
+  ptx_reg_t c = injected_value(current_status, gpu, c_, 2, i_type, 0);
 
   switch (c_type) {
     case S32_TYPE:
@@ -5622,13 +5922,16 @@ void slct_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, d, i_type, thread, pI);
 }
 
-void sqrt_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t a, d;
+void sqrt_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
+  ptx_reg_t a_, d;
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
 
   unsigned i_type = pI->get_type();
-  a = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, i_type, 0);
 
   switch (i_type) {
     case F32_TYPE:
@@ -5653,7 +5956,7 @@ void sqrt_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, d, i_type, thread, pI);
 }
 
-void sst_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void sst_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   ptx_instruction *cpI = const_cast<ptx_instruction *>(pI);  // constant
   const operand_info &dst = cpI->dst();
   const operand_info &src1 = pI->src1();
@@ -5661,9 +5964,15 @@ void sst_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   const operand_info &src3 = pI->src3();
   unsigned type = pI->get_type();
   ptx_reg_t dst_data = thread->get_operand_value(dst, dst, type, thread, 1);
-  ptx_reg_t src1_data = thread->get_operand_value(src1, src1, type, thread, 1);
-  ptx_reg_t src2_data = thread->get_operand_value(src2, src1, type, thread, 1);
-  ptx_reg_t src3_data = thread->get_operand_value(src3, src1, type, thread, 1);
+  ptx_reg_t src1_data_ = thread->get_operand_value(src1, src1, type, thread, 1);
+  ptx_reg_t src2_data_ = thread->get_operand_value(src2, src1, type, thread, 1);
+  ptx_reg_t src3_data_ = thread->get_operand_value(src3, src1, type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t src1_data = injected_value(current_status, gpu, src1_data_, 0, type, 0);
+  ptx_reg_t src2_data = injected_value(current_status, gpu, src2_data_, 1, type, 0);
+  ptx_reg_t src3_data = injected_value(current_status, gpu, src3_data_, 2, type, 0);
+
   memory_space_t space = pI->get_space();
   memory_space *mem = NULL;
   addr_t addr =
@@ -5738,13 +6047,13 @@ void sst_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   }
 }
 
-void ssy_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void ssy_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   // printf("Execution Warning: unimplemented ssy instruction is treated as a
   // nop\n");
   // TODO: add implementation
 }
 
-void st_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void st_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();  // may be scalar or vector of regs
   unsigned type = pI->get_type();
@@ -5795,7 +6104,7 @@ void st_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->m_last_memory_space = space;
 }
 
-void sub_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void sub_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   ptx_reg_t data;
   int overflow = 0;
   int carry = 0;
@@ -5805,8 +6114,12 @@ void sub_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   const operand_info &src2 = pI->src2();
 
   unsigned i_type = pI->get_type();
-  ptx_reg_t src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  ptx_reg_t src2_data = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  ptx_reg_t src1_data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  ptx_reg_t src2_data_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
+  ptx_reg_t src2_data = injected_value(current_status, gpu, src2_data_, 1, i_type, 0);
 
   // performs addition. Sets carry and overflow if needed.
   // the constant is added in during subtraction so the carry bit is set
@@ -5878,23 +6191,23 @@ void sub_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_operand_value(dst, data, i_type, thread, pI, overflow, carry);
 }
 
-void nop_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void nop_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   // Do nothing
 }
 
-void subc_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void subc_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
-void suld_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void suld_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
-void sured_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void sured_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
-void sust_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void sust_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
-void suq_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void suq_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
 
@@ -6001,7 +6314,7 @@ void textureNormalizeOutput(const struct cudaChannelFormatDesc &desc,
   }
 }
 
-void tex_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void tex_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   unsigned dimension = pI->dimension();
   const operand_info &dst =
       pI->dst();  // the registers to which fetched texel will be placed
@@ -6320,47 +6633,47 @@ void tex_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   thread->set_vector_operand_values(dst, data1, data2, data3, data4);
 }
 
-void txq_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void txq_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
-void trap_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void trap_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
-void vabsdiff_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void vabsdiff_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
-void vadd_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void vadd_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
-void vmad_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void vmad_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
 
 #define VMAX 0
 #define VMIN 1
 
-void vmax_impl(const ptx_instruction *pI, ptx_thread_info *thread)
+void vmax_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status)
 {
    video_mem_instruction(pI, thread, VMAX);
 }
-void vmin_impl(const ptx_instruction *pI, ptx_thread_info *thread)
+void vmin_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status)
 {
   video_mem_instruction(pI, thread, VMIN);
 }
-void vset_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void vset_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
-void vshl_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void vshl_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
-void vshr_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void vshr_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
-void vsub_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void vsub_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
 }
 
-void vote_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
+void vote_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   static bool first_in_warp = true;
   static bool and_all;
   static bool or_all;
@@ -6440,7 +6753,7 @@ void vote_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   }
 }
 
-void activemask_impl( const ptx_instruction *pI, ptx_thread_info *thread )
+void activemask_impl( const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status )
 {
   active_mask_t l_activemask_bitset = pI->get_warp_active_mask();
   uint32_t l_activemask_uint = static_cast<uint32_t>(l_activemask_bitset.to_ulong());
@@ -6449,16 +6762,20 @@ void activemask_impl( const ptx_instruction *pI, ptx_thread_info *thread )
   thread->set_operand_value(dst, l_activemask_uint, U32_TYPE, thread, pI);
 }
 
-void xor_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
-  ptx_reg_t src1_data, src2_data, data;
+void xor_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t* current_status) {
+  ptx_reg_t src1_data_, src2_data_, data;
 
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
 
   unsigned i_type = pI->get_type();
-  src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  src2_data = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  src1_data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  src2_data_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
+  ptx_reg_t src2_data = injected_value(current_status, gpu, src2_data_, 1, i_type, 0);
 
   // the way ptxplus handles predicates: 1 = false and 0 = true
   if (i_type == PRED_TYPE)

@@ -1409,6 +1409,7 @@ class register_set {
 
 struct fault_t
 {
+  unsigned int m_debug;
   unsigned int m_enable;
   unsigned int m_sm_id;
   unsigned int m_sm_sub_core_id;
@@ -1429,22 +1430,6 @@ struct current_status_t {
   unsigned int m_warp_id;
   unsigned int m_sch_id;
   unsigned int m_sm_id;
-};
-
-class injector_t {
-  public:
-    injector_t(gpgpu_context* gpu, current_status_t* current_status) {
-      m_gpu = gpu;
-      m_current_status = current_status;
-    };
-    ~injector_t();
-
-    current_status_t* get_current_status() { return m_current_status; };
-    void set_current_status(current_status_t* current_status) { m_current_status = current_status; };
-
-  private:
-    current_status_t* m_current_status;
-    gpgpu_context* m_gpu;
 };
 
 #endif  // #ifdef __cplusplus
