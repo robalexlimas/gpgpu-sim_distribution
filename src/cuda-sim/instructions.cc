@@ -77,7 +77,7 @@ void printf_fault_degub(current_status_t* current_status, fault_t fault, ptx_reg
     current_status->m_sch_id,
     current_status->m_lane_id,
     current_status->m_operation_type,
-    0,
+    fault.m_in_out,
     current_status->m_instruction
   );
   printf("Fault -> operand: %u, mask: %u, stuck at: %u, type: %u\n",
@@ -301,7 +301,7 @@ ptx_reg_t srcOperandModifiers(ptx_reg_t opData, operand_info opInfo,
                               operand_info dstInfo, unsigned type,
                               ptx_thread_info *thread);
                               
-void video_mem_instruction(const ptx_instruction *pI, ptx_thread_info *thread, int op_code);
+void video_mem_instruction(const ptx_instruction *pI, ptx_thread_info *thread, int op_code, current_status_t* current_status);
 
 void sign_extend(ptx_reg_t &data, unsigned src_size, const operand_info &dst);
 
@@ -1013,8 +1013,8 @@ void abs_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       assert(0);
       break;
   }
-
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, d, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void addp_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -1122,7 +1122,8 @@ void addp_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_statu
   }
   fesetround(orig_rm);
 
-  thread->set_operand_value(dst, data, i_type, thread, pI, overflow, carry);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI, overflow, carry);
 }
 
 void add_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -1217,8 +1218,8 @@ void add_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       break;
   }
   fesetround(orig_rm);
-
-  thread->set_operand_value(dst, data, i_type, thread, pI, overflow, carry);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI, overflow, carry);
 }
 
 void addc_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -1247,7 +1248,8 @@ void and_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
   else
     data.u64 = src1_data.u64 & src2_data.u64;
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void andn_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -1284,7 +1286,8 @@ void andn_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_statu
 
   data.u64 = src1_data.u64 & src2_data.u64;
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void bar_callback(const inst_t *inst, ptx_thread_info *thread) {
@@ -1632,8 +1635,13 @@ void atom_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_statu
   // const operand_info &dst  = pI->dst();  // not needed for effective address
   // calculation
   unsigned i_type = pI->get_type();
-  ptx_reg_t src1_data;
-  src1_data = thread->get_operand_value(src1, src1, i_type, thread, 1);
+  ptx_reg_t src1_data_;
+  
+  src1_data_ = thread->get_operand_value(src1, src1, i_type, thread, 1);
+
+  gpgpu_context *gpu = pI->dst().get_gpu();
+  ptx_reg_t src1_data = injected_value(current_status, gpu, src1_data_, 0, i_type, 0);
+
   addr_t effective_address = src1_data.u64;
 
   addr_t effective_address_final;
@@ -1832,7 +1840,8 @@ void bfe_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       abort();
       return;
   }
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void bfi_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -1881,7 +1890,8 @@ void bfi_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
     data.u32 = (~((0x00000001) << (pos + i))) & data.u32;
     data.u32 = data.u32 | ((src1_data.u32 & ((0x00000001) << (i))) << (pos));
   }
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 void bfind_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status)
 {
@@ -1918,9 +1928,8 @@ void bfind_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_stat
   // if (.shiftamt && d != 0xffffffff)  { d = msb - d; }
 
   // store d
-  thread->set_operand_value(dst, d_data, U32_TYPE, thread, pI);
-
-
+  ptx_reg_t data_send = injected_value(current_status, gpu, d_data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, U32_TYPE, thread, pI);
 }
 
 void bra_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -1985,7 +1994,8 @@ void brev_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_statu
     default:
       assert(0);
   }
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 void brkpt_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
@@ -2453,7 +2463,8 @@ void clz_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
     a.u64 = a.u64 << 1;
   }
 
-  thread->set_operand_value(dst, d, B32_TYPE, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, d, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, B32_TYPE, thread, pI);
 }
 
 void cnot_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -2486,7 +2497,8 @@ void cnot_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_statu
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, d, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void cos_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -2510,7 +2522,8 @@ void cos_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, d, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 ptx_reg_t chop(ptx_reg_t x, unsigned from_width, unsigned to_width, int to_sign,
@@ -3272,7 +3285,8 @@ void cvt_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
     data = result;
   }
 
-  thread->set_operand_value(dst, data, to_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, to_type, 1);
+  thread->set_operand_value(dst, data_send, to_type, thread, pI);
 }
 
 void cvta_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -3328,7 +3342,9 @@ void cvta_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_statu
 
   ptx_reg_t to_addr;
   to_addr.u64 = to_addr_hw;
-  thread->set_reg(dst.get_symbol(), to_addr);
+
+  ptx_reg_t data_send = injected_value(current_status, gpu, to_addr, 0, i_type, 1);
+  thread->set_reg(dst.get_symbol(), data_send);
 }
 
 void div_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -3398,7 +3414,9 @@ void div_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       assert(0);
       break;
   }
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void dp4a_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -3428,7 +3446,8 @@ void ex2_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       break;
   }
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void exit_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -3438,10 +3457,10 @@ void exit_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_statu
 }
 
 void mad_def(const ptx_instruction *pI, ptx_thread_info *thread,
-             bool use_carry = false);
+             bool use_carry, current_status_t* current_status);
 
 void fma_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
-  mad_def(pI, thread);
+  mad_def(pI, thread, false, current_status);
 }
 
 void isspacep_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -3557,13 +3576,17 @@ void decode_space(memory_space_t &space, ptx_thread_info *thread,
   }
 }
 
-void ld_exec(const ptx_instruction *pI, ptx_thread_info *thread) {
+void ld_exec(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t* current_status) {
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
 
   unsigned type = pI->get_type();
 
-  ptx_reg_t src1_data = thread->get_operand_value(src1, dst, type, thread, 1);
+  ptx_reg_t src1_data_ = thread->get_operand_value(src1, dst, type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t src1_data = injected_value(current_status, gpu, src1_data_, 0, type, 0);
+
   ptx_reg_t data;
   memory_space_t space = pI->get_space();
   unsigned vector_spec = pI->get_vector();
@@ -3580,7 +3603,8 @@ void ld_exec(const ptx_instruction *pI, ptx_thread_info *thread) {
   if (!vector_spec) {
     mem->read(addr, size / 8, &data.s64);
     if (type == S16_TYPE || type == S32_TYPE) sign_extend(data, size, dst);
-    thread->set_operand_value(dst, data, type, thread, pI);
+    ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, type, 1);
+    thread->set_operand_value(dst, data_send, type, thread, pI);
   } else {
     ptx_reg_t data1, data2, data3, data4;
     mem->read(addr, size / 8, &data1.s64);
@@ -3600,10 +3624,10 @@ void ld_exec(const ptx_instruction *pI, ptx_thread_info *thread) {
 }
 
 void ld_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
-  ld_exec(pI, thread);
+  ld_exec(pI, thread, current_status);
 }
 void ldu_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
-  ld_exec(pI, thread);
+  ld_exec(pI, thread, current_status);
 }
 
 void mma_st_impl(const ptx_instruction *pI, core_t *core, warp_inst_t &inst, current_status_t *current_status) {
@@ -3974,7 +3998,8 @@ void lg2_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, d, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void mad24_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -4028,23 +4053,24 @@ void mad24_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_stat
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, d, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void mad_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
-  mad_def(pI, thread, false);
+  mad_def(pI, thread, false, current_status);
 }
 
 void madp_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
-  mad_def(pI, thread, true);
+  mad_def(pI, thread, true, current_status);
 }
 
 void madc_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
-  mad_def(pI, thread, true);
+  mad_def(pI, thread, true, current_status);
 }
 
 void mad_def(const ptx_instruction *pI, ptx_thread_info *thread,
-             bool use_carry) {
+             bool use_carry, current_status_t* current_status) {
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
@@ -4055,9 +4081,14 @@ void mad_def(const ptx_instruction *pI, ptx_thread_info *thread,
   int overflow = 0;
 
   unsigned i_type = pI->get_type();
-  ptx_reg_t a = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  ptx_reg_t b = thread->get_operand_value(src2, dst, i_type, thread, 1);
-  ptx_reg_t c = thread->get_operand_value(src3, dst, i_type, thread, 1);
+  ptx_reg_t a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  ptx_reg_t b_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  ptx_reg_t c_ = thread->get_operand_value(src3, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, i_type, 0);
+  ptx_reg_t b = injected_value(current_status, gpu, b_, 1, i_type, 0);
+  ptx_reg_t c = injected_value(current_status, gpu, c_, 2, i_type, 0);
 
   // take the carry bit, it should be the 4th operand
   ptx_reg_t carry_bit;
@@ -4217,7 +4248,9 @@ void mad_def(const ptx_instruction *pI, ptx_thread_info *thread,
       assert(0);
       break;
   }
-  thread->set_operand_value(dst, d, i_type, thread, pI, overflow, carry);
+
+  ptx_reg_t data_send = injected_value(current_status, gpu, d, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI, overflow, carry);
 }
 
 bool isNaN(float x) { return std::isnan(x); }
@@ -4269,8 +4302,8 @@ void max_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       assert(0);
       break;
   }
-
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, d, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void membar_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -4322,12 +4355,12 @@ void min_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       assert(0);
       break;
   }
-
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, d, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void mov_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
-  ptx_reg_t data;
+  ptx_reg_t data_;
 
   const operand_info &dst = pI->dst();
   const operand_info &src1 = pI->src1();
@@ -4384,7 +4417,10 @@ void mov_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
         }
       }
     } else {
-      data = thread->get_operand_value(src1, dst, i_type, thread, 1);
+      data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+
+      gpgpu_context *gpu = dst.get_gpu();
+      ptx_reg_t data = injected_value(current_status, gpu, data_, 0, i_type, 0);
 
       switch (pI->get_type()) {
         case B16_TYPE:
@@ -4429,19 +4465,27 @@ void mov_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       }
       thread->set_vector_operand_values(dst, v[0], v[1], v[2], v[3]);
     } else {
-      thread->set_operand_value(dst, tmp_bits, i_type, thread, pI);
+      gpgpu_context *gpu = dst.get_gpu();
+      ptx_reg_t data_send = injected_value(current_status, gpu, tmp_bits, 0, i_type, 1);
+      thread->set_operand_value(dst, data_send, i_type, thread, pI);
     }
   } else if (i_type == PRED_TYPE and src1.is_literal() == true) {
     // in ptx, literal input translate to predicate as 0 = false and 1 = true
     // we have adopted the opposite to simplify implementation of zero flags in
     // ptxplus
-    data = thread->get_operand_value(src1, dst, i_type, thread, 1);
+    data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+
+    gpgpu_context *gpu = dst.get_gpu();
+    ptx_reg_t data = injected_value(current_status, gpu, data_, 0, i_type, 1);
 
     ptx_reg_t finaldata;
     finaldata.pred = (data.u32 == 0) ? 1 : 0;  // setting zero-flag in predicate
     thread->set_operand_value(dst, finaldata, i_type, thread, pI);
   } else {
-    data = thread->get_operand_value(src1, dst, i_type, thread, 1);
+    data_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+
+    gpgpu_context *gpu = dst.get_gpu();
+    ptx_reg_t data = injected_value(current_status, gpu, data_, 0, i_type, 1);
 
     thread->set_operand_value(dst, data, i_type, thread, pI);
   }
@@ -4491,7 +4535,8 @@ void mul24_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_stat
     data.mask_and(0, 0xFFFFFFFF);
   }
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void mul_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -4653,7 +4698,8 @@ void mul_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, d, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void neg_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -4696,7 +4742,8 @@ void neg_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       break;
   }
 
-  thread->set_operand_value(dst, data, to_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, to_type, 1);
+  thread->set_operand_value(dst, data_send, to_type, thread, pI);
 }
 
 // nandn bitwise negates second operand then bitwise nands with the first
@@ -4722,7 +4769,8 @@ void nandn_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_stat
   else
     data.u64 = ~(src1_data.u64 & ~src2_data.u64);
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 // norn bitwise negates first operand then bitwise ands with the second operand
@@ -4747,7 +4795,8 @@ void norn_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_statu
   else
     data.u64 = ~(src1_data.u64) & src2_data.u64;
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void not_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -4780,7 +4829,8 @@ void not_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, d, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void or_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -4803,7 +4853,8 @@ void or_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_
   else
     data.u64 = src1_data.u64 | src2_data.u64;
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void orn_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -4826,7 +4877,8 @@ void orn_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
   else
     data.u64 = src1_data.u64 | ~src2_data.u64;
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void pmevent_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -4858,7 +4910,8 @@ void popc_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_statu
       break;
   }
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 void prefetch_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
@@ -4973,7 +5026,8 @@ void prmt_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_statu
   data.s32 =
       data.s32 | read_byte(mode, ctl[3], 3, tmpdata.s64);  // Fourth byte-3
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void rcp_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -5001,7 +5055,8 @@ void rcp_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       break;
   }
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void red_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -5041,7 +5096,8 @@ void rem_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       break;
   }
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void ret_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -5106,7 +5162,8 @@ void rsqrt_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_stat
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, d, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 #define SAD(d, a, b, c) d = c + ((a < b) ? (b - a) : (a - b))
@@ -5160,7 +5217,8 @@ void sad_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, d, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void selp_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -5186,7 +5244,8 @@ void selp_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_statu
   // behavior
   d = (!(c.pred & 0x0001)) ? a : b;
 
-  thread->set_operand_value(dst, d, PRED_TYPE, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, d, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, PRED_TYPE, thread, pI);
 }
 
 bool isFloat(int type) {
@@ -5559,7 +5618,8 @@ void setp_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_statu
       (t ==
        0);  // inverting predicate since ptxplus uses "1" for a set zero flag
 
-  thread->set_operand_value(dst, data, PRED_TYPE, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, PRED_TYPE, 1);
+  thread->set_operand_value(dst, data_send, PRED_TYPE, thread, pI);
 }
 
 void set_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -5627,7 +5687,8 @@ void set_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
     data.u32 = (t != 0) ? 0xFFFFFFFF : 0;
   }
 
-  thread->set_operand_value(dst, data, pI->get_type(), thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, pI->get_type(), 1);
+  thread->set_operand_value(dst, data_send, pI->get_type(), thread, pI);
 }
 
 void shfl_impl(const ptx_instruction *pI, core_t *core, warp_inst_t inst, current_status_t *current_status) {
@@ -5648,8 +5709,15 @@ void shfl_impl(const ptx_instruction *pI, core_t *core, warp_inst_t inst, curren
   const operand_info &src1 = pI->src1();
   const operand_info &src2 = pI->src2();
   const operand_info &src3 = pI->src3();
-  int bval = (thread->get_operand_value(src2, dst, i_type, thread, 1)).u32;
-  int cval = (thread->get_operand_value(src3, dst, i_type, thread, 1)).u32;
+  ptx_reg_t data1_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  ptx_reg_t data2_ = thread->get_operand_value(src3, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = dst.get_gpu();
+  ptx_reg_t data1 = injected_value(current_status, gpu, data1_, 0, i_type, 0);
+  ptx_reg_t data2 = injected_value(current_status, gpu, data2_, 1, i_type, 0);
+
+  int bval = data1.u32;
+  int cval = data2.u32;
   int mask = cval >> 8;
   bval &= 0x1F;
   cval &= 0x1F;
@@ -5685,10 +5753,13 @@ void shfl_impl(const ptx_instruction *pI, core_t *core, warp_inst_t inst, curren
   if (!p) src_idx = lane;
 
   // copy input from lane src_idx
-  ptx_reg_t data;
+  ptx_reg_t data_, data;
   if (inst.active(src_idx)) {
     ptx_thread_info *source = core->get_thread_info()[tid + src_idx];
-    data = source->get_operand_value(src1, dst, i_type, source, 1);
+    data_ = source->get_operand_value(src1, dst, i_type, source, 1);
+
+    data = injected_value(current_status, gpu, data_, 0, i_type, 0);
+
   } else {
     printf(
         "GPGPU-Sim PTX: WARNING: shfl input value unpredictable for inactive "
@@ -5755,7 +5826,8 @@ void shl_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, d, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void shr_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -5837,8 +5909,8 @@ void shr_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       assert(0);
       break;
   }
-
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, d, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void sin_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -5862,7 +5934,8 @@ void sin_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, d, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void slct_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -5919,7 +5992,8 @@ void slct_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_statu
       assert(0);
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, d, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void sqrt_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -5953,7 +6027,8 @@ void sqrt_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_statu
       break;
   }
 
-  thread->set_operand_value(dst, d, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, d, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void sst_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -6033,7 +6108,8 @@ void sst_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
     // store the number of nonzero elements in the array
     data = thread->get_operand_value(src1, dst, type, thread, 1);
     data.s64 += 4 * (offset - 1);
-    thread->set_operand_value(dst, data, type, thread, pI);
+    ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, type, 1);
+    thread->set_operand_value(dst, data_send, type, thread, pI);
 
     // fill the rest of the array with zeros (dst should always have a 0 in it)
     while (offset < NUM_THREADS) {
@@ -6058,7 +6134,10 @@ void st_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_
   const operand_info &src1 = pI->src1();  // may be scalar or vector of regs
   unsigned type = pI->get_type();
   ptx_reg_t addr_reg = thread->get_operand_value(dst, dst, type, thread, 1);
-  ptx_reg_t data;
+
+  gpgpu_context *gpu = dst.get_gpu();
+  
+  ptx_reg_t data, data_;
   memory_space_t space = pI->get_space();
   unsigned vector_spec = pI->get_vector();
 
@@ -6072,7 +6151,8 @@ void st_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_
   type_info_key::type_decode(type, size, t);
 
   if (!vector_spec) {
-    data = thread->get_operand_value(src1, dst, type, thread, 1);
+    data_ = thread->get_operand_value(src1, dst, type, thread, 1);
+    data = injected_value(current_status, gpu, data_, 0, type, 0);
     mem->write(addr, size / 8, &data.s64, thread, pI);
   } else {
     if (vector_spec == V2_TYPE) {
@@ -6187,8 +6267,8 @@ void sub_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
       assert(0);
       break;
   }
-
-  thread->set_operand_value(dst, data, i_type, thread, pI, overflow, carry);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI, overflow, carry);
 }
 
 void nop_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
@@ -6654,11 +6734,11 @@ void vmad_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_statu
 
 void vmax_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status)
 {
-   video_mem_instruction(pI, thread, VMAX);
+   video_mem_instruction(pI, thread, VMAX, current_status);
 }
 void vmin_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status)
 {
-  video_mem_instruction(pI, thread, VMIN);
+  video_mem_instruction(pI, thread, VMIN, current_status);
 }
 void vset_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status_t *current_status) {
   inst_not_implemented(pI);
@@ -6695,9 +6775,12 @@ void vote_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_statu
         offset;
   }
 
-  ptx_reg_t src1_data;
+  ptx_reg_t src1_data_;
   const operand_info &src1 = pI->src1();
-  src1_data = thread->get_operand_value(src1, pI->dst(), PRED_TYPE, thread, 1);
+  src1_data_ = thread->get_operand_value(src1, pI->dst(), PRED_TYPE, thread, 1);
+
+  gpgpu_context *gpu = pI->dst().get_gpu();
+  ptx_reg_t src1_data = injected_value(current_status, gpu, src1_data_, 0, PRED_TYPE, 0);
 
   // predicate value was changed so the lowest bit being set means the zero flag
   // is set. As a result, the value of src1_data.pred must be inverted to get
@@ -6721,7 +6804,8 @@ void vote_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_statu
       for (std::list<ptx_thread_info *>::iterator t = threads_in_warp.begin();
            t != threads_in_warp.end(); ++t) {
         const operand_info &dst = pI->dst();
-        (*t)->set_operand_value(dst, data, pI->get_type(), (*t), pI);
+        ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, pI->get_type(), 1);
+        (*t)->set_operand_value(dst, data_send, pI->get_type(), (*t), pI);
       }
     } else {
       bool pred_value = false;
@@ -6746,7 +6830,8 @@ void vote_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_statu
       for (std::list<ptx_thread_info *>::iterator t = threads_in_warp.begin();
            t != threads_in_warp.end(); ++t) {
         const operand_info &dst = pI->dst();
-        (*t)->set_operand_value(dst, data, PRED_TYPE, (*t), pI);
+        ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, PRED_TYPE, 1);
+        (*t)->set_operand_value(dst, data_send, PRED_TYPE, (*t), pI);
       }
     }
     first_in_warp = true;
@@ -6783,7 +6868,8 @@ void xor_impl(const ptx_instruction *pI, ptx_thread_info *thread, current_status
   else
     data.u64 = src1_data.u64 ^ src2_data.u64;
 
-  thread->set_operand_value(dst, data, i_type, thread, pI);
+  ptx_reg_t data_send = injected_value(current_status, gpu, data, 0, i_type, 1);
+  thread->set_operand_value(dst, data_send, i_type, thread, pI);
 }
 
 void inst_not_implemented(const ptx_instruction *pI) {
@@ -6844,7 +6930,7 @@ ptx_reg_t srcOperandModifiers(ptx_reg_t opData, operand_info opInfo,
   return result;
 }
 
-void video_mem_instruction(const ptx_instruction *pI, ptx_thread_info *thread, int op_code)
+void video_mem_instruction(const ptx_instruction *pI, ptx_thread_info *thread, int op_code, current_status_t* current_status)
 {
   const operand_info &dst  = pI->dst(); // d
   const operand_info &src1 = pI->src1(); // a
@@ -6856,11 +6942,16 @@ void video_mem_instruction(const ptx_instruction *pI, ptx_thread_info *thread, i
   std::list<int> scalar_type;
   std::list<int> options;
 
-  ptx_reg_t a, b, ta, tb, c, data;
+  ptx_reg_t a_, b_, ta, tb, c_, data;
 
-  a = thread->get_operand_value(src1, dst, i_type, thread, 1);
-  b = thread->get_operand_value(src2, dst, i_type, thread, 1);
-  c = thread->get_operand_value(src3, dst, i_type, thread, 1);
+  a_ = thread->get_operand_value(src1, dst, i_type, thread, 1);
+  b_ = thread->get_operand_value(src2, dst, i_type, thread, 1);
+  c_ = thread->get_operand_value(src3, dst, i_type, thread, 1);
+
+  gpgpu_context *gpu = pI->dst().get_gpu();
+  ptx_reg_t a = injected_value(current_status, gpu, a_, 0, i_type, 0);
+  ptx_reg_t b = injected_value(current_status, gpu, b_, 1, i_type, 0);
+  ptx_reg_t c = injected_value(current_status, gpu, c_, 2, i_type, 0);
 
   // TODO: implement this
   // ta = partSelectSignExtend( a, atype );
