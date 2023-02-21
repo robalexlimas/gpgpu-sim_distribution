@@ -1890,7 +1890,7 @@ void gpgpu_sim::cycle() {
     }
     gpu_sim_cycle++;
     if (gpgpu_ctx->m_fault.m_enable)
-      assert(gpu_tot_sim_cycle + gpu_sim_cycle < gpgpu_ctx->m_fault.m_timeout_cycles && "Timeout");
+      assert(gpu_tot_sim_cycle + gpu_sim_cycle < gpgpu_ctx->m_fault.m_timeout_cycles && "WARNING:Timeout");
 
     if (g_interactive_debugger_enabled) gpgpu_debug();
 
