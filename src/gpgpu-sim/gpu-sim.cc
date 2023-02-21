@@ -688,6 +688,9 @@ void gpgpu_sim_config::reg_options(option_parser_t opp) {
   option_parser_register(opp, "-fault_stuckat", OPT_INT32,
                          &(gpgpu_ctx->m_fault.m_stuck_at),
                          "The bit value", "0");
+  option_parser_register(opp, "-fault_timeout_cycles", OPT_INT64,
+                         &(gpgpu_ctx->m_fault.m_timeout_cycles),
+                         "Total cycles", "0");
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -1886,6 +1889,7 @@ void gpgpu_sim::cycle() {
       raise(SIGTRAP);  // Debug breakpoint
     }
     gpu_sim_cycle++;
+    assert(gpu_tot_sim_cycle + gpu_sim_cycle < gpgpu_ctx->m_fault.m_timeout_cycles && "Timeout");
 
     if (g_interactive_debugger_enabled) gpgpu_debug();
 
