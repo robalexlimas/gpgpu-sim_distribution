@@ -1419,6 +1419,7 @@ struct fault_t
   unsigned int m_operand;
   unsigned int m_mask;
   unsigned int m_stuck_at;
+  unsigned long long m_timeout_cycles;
 };
 
 struct current_status_t {
